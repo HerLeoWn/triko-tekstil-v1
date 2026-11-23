@@ -1,7 +1,7 @@
 // Raporlar: uyarılar, depo özeti, gün sonu raporu
 import express from 'express';
 import { db } from '../db.js';
-import { toCuval, depoListe, parcaListesi, wrap } from '../lib/Yardimcilar.js';
+import { toCuval, depoListe, parcaListesi, wrap } from '../lib/yardimcilar.js';
 
 const router = express.Router();
 

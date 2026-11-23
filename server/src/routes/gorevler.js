@@ -5,7 +5,7 @@ import express from 'express';
 import { db } from '../db.js';
 import './mesajlar.js'; // mesajlar tablosu bu dosyadan önce hazır olsun
 import { wrap, uid, now, depoAd, depoGecerli, logH } from '../lib/yardimcilar.js';
-import { stokSeriByRenk, renktenDus, geriEkle } from '../services/stokKesim.js';
+import { stokSeriByRenk, renktenDus, geriEkle } from '../services/stokkesim.js';
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS gorevler (

@@ -1,7 +1,7 @@
 // Stok özeti: depo dağılımlı ürün grupları ve toplamlar
 import express from 'express';
 import { db } from '../db.js';
-import { toCuval, depoListe, wrap } from '../lib/Yardimcilar.js';
+import { toCuval, depoListe, wrap } from '../lib/yardimcilar.js';
 
 const router = express.Router();
 

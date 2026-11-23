@@ -1,7 +1,7 @@
 // Stok düşme, geri ekleme ve renk toplamları. Giden kayıtlarının kalbi.
 import { db } from '../db.js';
 import { FULL } from '../stok.js';
-import { now, same, anaRenk, guvenliParse, parcaListesi, insertCuval } from '../lib/Yardimcilar.js';
+import { now, same, anaRenk, guvenliParse, parcaListesi, insertCuval } from '../lib/yardimcilar.js';
 
 // Stokta her rengin toplam seri sayısı: { vanilya: 6, bordo: 3 }
 // depoId verilmezse tüm depolar toplanır (biten listesi için)

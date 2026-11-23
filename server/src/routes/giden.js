@@ -1,7 +1,7 @@
 // Giden mallar: listele, ekle, düzenle, sil (hepsi stoktan düşer / geri ekler)
 import express from 'express';
 import { db } from '../db.js';
-import { stokSeriByRenk, renktenDus, geriEkle } from '../services/stokKesim.js';
+import { stokSeriByRenk, renktenDus, geriEkle } from '../services/stokkesim.js';
 import { wrap, like, uid, now, logH, depoGecerli, depoAd, guvenliParse } from '../lib/yardimcilar.js';
 import { gidenBildirimi } from './mesajlar.js';
 

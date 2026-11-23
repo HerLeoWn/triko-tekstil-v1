@@ -1,7 +1,7 @@
 // İşlem geçmişi (hareketler)
 import express from 'express';
 import { db } from '../db.js';
-import { wrap } from '../lib/Yardimcilar.js';
+import { wrap } from '../lib/yardimcilar.js';
 
 const router = express.Router();
 

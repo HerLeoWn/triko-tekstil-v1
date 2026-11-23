@@ -5,7 +5,7 @@ import { FULL, parseEksik, buildSeriler, stats } from '../stok.js';
 import {
   wrap, like, now, logH, depoGecerli, depoAd, urunKaydet, parcalarGelen,
   toCuval, insertCuval, anaRenk, guvenliParse,
-} from '../lib/Yardimcilar.js';
+} from '../lib/yardimcilar.js';
 
 const router = express.Router();
 

@@ -5,7 +5,7 @@ import {
   kullaniciSayisi, kullaniciOlustur, girisDogrula, oturumAc, oturumKapat,
   kullaniciOturumlariniKapat, cookieYaz, cookieSil, sifreHash, ROLLER,
 } from '../auth.js';
-import { logH, wrap } from '../lib/Yardimcilar.js';
+import { logH, wrap } from '../lib/yardimcilar.js';
 
 const router = express.Router();
 

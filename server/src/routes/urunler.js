@@ -1,7 +1,7 @@
 // Ürünler: ürün listesi, ürün kodu/adı düzenleme, ürün grubunu silme
 import express from 'express';
 import { db } from '../db.js';
-import { same, now, logH, wrap } from '../lib/Yardimcilar.js';
+import { same, now, logH, wrap } from '../lib/yardimcilar.js';
 
 const router = express.Router();
 

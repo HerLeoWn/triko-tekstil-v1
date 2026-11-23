@@ -1,7 +1,7 @@
 // Yedek al / yedekten yükle ve son işlemi geri al
 import express from 'express';
 import { yedekAl, listele, geriYukle, geriAl, geriAlDurum } from '../yedek.js';
-import { wrap } from '../lib/Yardimcilar.js';
+import { wrap } from '../lib/yardimcilar.js';
 
 const router = express.Router();
 

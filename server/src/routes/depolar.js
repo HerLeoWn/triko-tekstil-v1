@@ -1,7 +1,7 @@
 // Depolar: listele, ekle, yeniden adlandır, sil
 import express from 'express';
 import { db } from '../db.js';
-import { depoListe, depoAd, logH, wrap } from '../lib/Yardimcilar.js';
+import { depoListe, depoAd, logH, wrap } from '../lib/yardimcilar.js';
 
 const router = express.Router();
 

@@ -1,8 +1,8 @@
 // Bitenler: giden olup stokta kalmayan renkler
 import express from 'express';
 import { db } from '../db.js';
-import { stokSeriByRenk } from '../services/stokKesim.js';
-import { wrap } from '../lib/Yardimcilar.js';
+import { stokSeriByRenk } from '../services/stokkesim.js';
+import { wrap } from '../lib/yardimcilar.js';
 
 const router = express.Router();
 
