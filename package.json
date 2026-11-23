@@ -1,0 +1,19 @@
+{
+  "name": "triko-takip",
+  "version": "1.0.0",
+  "description": "Triko çuval ve stok takip uygulaması",
+  "author": "Mesut",
+  "private": true,
+  "scripts": {
+    "build:arayuz": "npm run build --prefix client",
+    "build:exe": "npm run build:arayuz && pkg server/src/index.js --targets node22-win-x64 --output dist/TrikoTakip.exe && (xcopy /E /I /Y client\\dist dist\\client\\dist)"
+  },
+  "pkg": {
+    "assets": [
+      "client/dist/**/*"
+    ]
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.25.0"
+  }
+}
