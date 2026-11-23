@@ -13,6 +13,13 @@ const veriKlasoru = process.pkg
 const dbYolu = process.env.DB_PATH || path.join(veriKlasoru, 'triko.db');
 fs.mkdirSync(path.dirname(dbYolu), { recursive: true });
 
+// Yükleme bekleyen veritabanı varsa (veri-yukle ile gelen) önce onu yerine koy
+const bekleyen = dbYolu + '.yeni';
+if (fs.existsSync(bekleyen)) {
+  for (const ek of ['', '-wal', '-shm']) fs.rmSync(dbYolu + ek, { force: true });
+  fs.renameSync(bekleyen, dbYolu);
+}
+
 export const ilkKez = !fs.existsSync(dbYolu);
 
 const raw = new DatabaseSync(dbYolu);

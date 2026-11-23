@@ -5,7 +5,7 @@ import cors from 'cors';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-
+import veriYukleRouter from './routes/veriYukle.js';
 import { ilkKez } from './db.js';
 import { listele, geriYukle, islemOncesi, baslatOtomatikYedek } from './yedek.js';
 import { kimlik, yetkiKontrol } from './auth.js';
@@ -27,6 +27,7 @@ import gorevlerRouter from './routes/gorevler.js';
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+app.use(veriYukleRouter);   // GEÇİCİ: taşıma bitince bu satırı silin
 app.use(kimlik);            // oturumu çöz
 app.use(yetkiKontrol);      // rol kontrolü
 app.use(mesajlarRouter);    // mesajlar geri al (undo) kaydına girmez
