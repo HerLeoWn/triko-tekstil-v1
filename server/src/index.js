@@ -12,7 +12,7 @@ import { kimlik, yetkiKontrol } from './auth.js';
 import { olaylarRoute, degisiklikBildirimi } from './lib/sse.js';
 
 import cuvallarRouter from './routes/cuvallar.js';
-import gidenRouter from './routes/Giden.js';
+import gidenRouter from './routes/giden.js';
 import bitenRouter from './routes/biten.js';
 import stokRouter from './routes/stok.js';
 import depolarRouter from './routes/depolar.js';
