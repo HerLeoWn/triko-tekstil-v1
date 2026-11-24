@@ -6,6 +6,7 @@ import cors from 'cors';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import fasoncuRouter from './routes/fasoncu.js';
 
 import { db, ilkKez } from './db.js';
 import { listele, geriYukle, islemOncesi, baslatOtomatikYedek } from './yedek.js';

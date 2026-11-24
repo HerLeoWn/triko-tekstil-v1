@@ -2,13 +2,15 @@
 import crypto from 'node:crypto';
 import { db } from './db.js';
 
-// yonetici: Depo sorumlusu (her şey) · calisan · izleyici (yalnızca görüntüleme) · muhasebe (görev atar, giden düzenler, mesaj)
-export const ROLLER = ['yonetici', 'calisan', 'izleyici', 'muhasebe'];
+// yonetici: Depo sorumlusu (her şey) · muhasebe: görev atar, giden düzenler, gelen malları görür · fasoncu: gelen mal bildirir, konum paylaşır
+export const ROLLER = ['yonetici', 'muhasebe', 'fasoncu'];
 const OTURUM_GUN = 30;
 const COOKIE = 'triko_oturum';
 const HERKESE_ACIK = ['/api/kurulum', '/api/giris', '/api/cikis', '/api/ben', '/api/sifre-talebi'];
 // Şifresini yenilemesi gereken kullanıcının erişebildiği yollar
 const SIFRE_ISTISNA = ['/api/hesap', '/api/ben', '/api/cikis'];
+// Fasoncu yalnızca bu okuma yollarını kullanabilir (stok, çuval, giden vb. görmez)
+const FASONCU_GET = ['/api/konum/depo', '/api/gelen-mallar', '/api/mesajlar'];
 
 let aktifAd = 'sistem';
 export const getAktif = () => aktifAd;
@@ -29,7 +31,7 @@ function sifreDogrula(sifre, kayit) {
 export const kullaniciSayisi = () =>
   db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
 
-export function kullaniciOlustur({ ad, kullanici, sifre, rol = 'calisan', sifreDegistir = false }) {
+export function kullaniciOlustur({ ad, kullanici, sifre, rol = 'fasoncu', sifreDegistir = false }) {
   const a = String(ad ?? '').trim();
   const k = String(kullanici ?? '').trim().toLowerCase();
   if (!a || !k) throw new Error('Ad ve kullanıcı adı zorunlu.');
@@ -104,22 +106,23 @@ export function kimlik(req, res, next) {
 
 // Hangi roller hangi isteği yapabilir. Liste null ise giriş yapmış herkes yapabilir.
 function izinliRoller(method, path) {
-  if (path === '/api/hesap') return null; // Herkes kendi hesabını düzenleyebilir
+  if (path === '/api/hesap') return null;
   if (path.startsWith('/api/kullanicilar')) return ['yonetici'];
-    if (path.startsWith('/api/sifre-talepleri')) return ['yonetici'];
-  if (path.startsWith('/api/mesajlar') && method !== 'GET') return ['yonetici', 'calisan', 'muhasebe'];
+  if (path.startsWith('/api/sifre-talepleri')) return ['yonetici'];
+  if (path.startsWith('/api/mesajlar') && method !== 'GET') return ['yonetici', 'muhasebe'];
   if (path.startsWith('/api/gorevler') && method !== 'GET') {
     // Görev atama ve iptal muhasebeye ait; kabul, red ve gönderim depo sorumlusuna ait
     if (path === '/api/gorevler' || path.endsWith('/iptal')) return ['muhasebe'];
     return ['yonetici'];
   }
+  if (path.startsWith('/api/konum/depo') && method !== 'GET') return ['yonetici'];
+  if (path.startsWith('/api/konum/fasoncu')) return method === 'GET' ? ['yonetici', 'muhasebe'] : ['fasoncu'];
+  if (path === '/api/gelen-mallar' && method === 'POST') return ['fasoncu'];
+  if (path.startsWith('/api/gelen-mallar/')) return ['yonetici', 'muhasebe'];
   if (method === 'GET') return null;
   if (path.startsWith('/api/yedek') || path === '/api/geri-al') return ['yonetici'];
-  if (path.startsWith('/api/giden/') && method === 'PUT') return ['yonetici', 'calisan', 'muhasebe'];
-  if (path.startsWith('/api/urun') || path === '/api/hareketler') {
-    return method === 'DELETE' ? ['yonetici'] : ['yonetici', 'calisan'];
-  }
-  return ['yonetici', 'calisan'];
+  if (path.startsWith('/api/giden/') && method === 'PUT') return ['yonetici', 'muhasebe'];
+  return ['yonetici'];
 }
 
 export function yetkiKontrol(req, res, next) {
@@ -127,6 +130,10 @@ export function yetkiKontrol(req, res, next) {
   if (!req.kullanici) return res.status(401).json({ error: 'Oturum gerekli.' });
   if (req.kullanici.sifreDegistir && !SIFRE_ISTISNA.includes(req.path)) {
     return res.status(403).json({ error: 'Önce yeni şifrenizi belirlemeniz gerekiyor.', sifreDegistir: true });
+  }
+  if (req.kullanici.rol === 'fasoncu' && req.method === 'GET'
+      && !FASONCU_GET.some((p) => req.path.startsWith(p))) {
+    return res.status(403).json({ error: 'Bu bilgi için yetkiniz yok.' });
   }
   const roller = izinliRoller(req.method, req.path);
   if (roller && !roller.includes(req.kullanici.rol)) {

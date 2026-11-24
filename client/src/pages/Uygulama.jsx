@@ -14,6 +14,8 @@ import YanPanel from '../components/layout/YanPanel.jsx';
 import { MesajPaneli } from '../components/mesaj/MesajPaneli.jsx';
 import { MuhasebeSayfa } from '../components/muhasebe/MuhasebeSayfa.jsx';
 import { GorevPaneli } from '../components/gorev/GorevPaneli.jsx';
+import { FasonculSayfa } from '../components/fasoncu/FasonculSayfa.jsx';
+import { GelenMallarPaneli } from '../components/gelen/GelenMallarPaneli.jsx';
 import SekmeIcerik from './SekmeIcerik.jsx';
 
 const ayarOku = (key, varsayilan) => {
@@ -21,19 +23,42 @@ const ayarOku = (key, varsayilan) => {
   return v > 0 ? v : varsayilan;
 };
 
-// Giriş yapılmış kullanıcının ana ekranı. Muhasebe rolü kendi ekranını kullanır.
+// Rol bazlı giriş: fasoncu ve muhasebe kendi ekranını kullanır, depo sorumlusu ana ekranı görür
 export default function Uygulama({ kullanici, onCikis }) {
-  const yonetici = kullanici.rol === 'yonetici';
-  const okuma = kullanici.rol === 'izleyici';
+  if (kullanici.rol === 'fasoncu') {
+    return <FasonculSayfa kullanici={kullanici} onCikis={onCikis} />;
+  }
+  if (kullanici.rol === 'muhasebe') {
+    return <MuhasebeKapi kullanici={kullanici} onCikis={onCikis} />;
+  }
+  return <YoneticiEkrani kullanici={kullanici} onCikis={onCikis} />;
+}
 
+// Muhasebe ekranına mesaj verisini bağlar
+function MuhasebeKapi({ kullanici, onCikis }) {
+  const { liste, okunmamis, yenile } = useMesajlar();
+  return (
+    <MuhasebeSayfa
+      kullanici={kullanici}
+      onCikis={onCikis}
+      liste={liste}
+      okunmamis={okunmamis}
+      yenile={yenile}
+    />
+  );
+}
+
+// Depo sorumlusunun ana ekranı
+function YoneticiEkrani({ kullanici, onCikis }) {
   const TABS = [
     ['stok', 'Stok özeti'],
     ['cuval', 'Çuvallar'],
     ['giden', 'Giden mallar'],
     ['biten', 'Bitenler'],
     ['uyari', 'Uyarılar'],
-    ...(yonetici ? [['gorevler', 'Görevler']] : []),
-    ...(yonetici ? [['kullanicilar', 'Kullanıcılar']] : []),
+    ['gelen', 'Gelen mallar'],
+    ['gorevler', 'Görevler'],
+    ['kullanicilar', 'Kullanıcılar'],
   ];
 
   const [tab, setTab] = useState('stok');
@@ -50,35 +75,20 @@ export default function Uygulama({ kullanici, onCikis }) {
   useEffect(() => { localStorage.setItem('triko-esik', esik); }, [esik]);
   useEffect(() => { localStorage.setItem('triko-gun', gun); }, [gun]);
 
-  const { data, canli, refresh, run } = useTriko({ yonetici, q, cuvalDurum, esik, gun });
+  const { data, canli, refresh, run } = useTriko({ yonetici: true, q, cuvalDurum, esik, gun });
   const islem = useIslemler({ run, form, setForm });
   const { liste, okunmamis, yenile } = useMesajlar();
   const gorev = useGorevler();
 
-  const yetkisiz = () => alert('Bu işlem için depo sorumlusu yetkisi gerekir.');
-  const grupSil = yonetici ? islem.onDeleteGroup : yetkisiz;
-  const logTemizle = yonetici ? islem.onClearLog : yetkisiz;
   const uyariSayisi = (data.uyari?.dusuk.length ?? 0) + (data.uyari?.hareketsiz.length ?? 0);
 
-  if (kullanici.rol === 'muhasebe') {
-    return (
-      <MuhasebeSayfa
-        kullanici={kullanici}
-        onCikis={onCikis}
-        liste={liste}
-        okunmamis={okunmamis}
-        yenile={yenile}
-      />
-    );
-  }
-
   return (
-    <YetkiContext.Provider value={{ rol: kullanici.rol, okumaModu: okuma }}>
+    <YetkiContext.Provider value={{ rol: kullanici.rol, okumaModu: false }}>
       <div className="min-h-screen pb-24 sm:pb-10">
         <Baslik
           kullanici={kullanici}
           canli={canli}
-          okuma={okuma}
+          okuma={false}
           onRapor={() => setRaporAcik(true)}
           onOzet={() => setOzetAcik(true)}
           onMesaj={() => setMesajAcik(true)}
@@ -100,19 +110,21 @@ export default function Uygulama({ kullanici, onCikis }) {
               cuvalDurum={cuvalDurum}
               setCuvalDurum={setCuvalDurum}
             />
-            {tab === 'gorevler' ? (
+            {tab === 'gelen' ? (
+              <GelenMallarPaneli yonetici />
+            ) : tab === 'gorevler' ? (
               <GorevPaneli liste={gorev.liste} yenile={gorev.yenile} />
             ) : (
               <SekmeIcerik
                 tab={tab}
                 data={data}
-                yonetici={yonetici}
+                yonetici
                 kullanici={kullanici}
                 esik={esik}
                 gun={gun}
                 setEsik={setEsik}
                 setGun={setGun}
-                grupSil={grupSil}
+                grupSil={islem.onDeleteGroup}
                 setUrunDuz={setUrunDuz}
                 setForm={setForm}
                 islem={islem}
@@ -123,8 +135,8 @@ export default function Uygulama({ kullanici, onCikis }) {
 
           <YanPanel
             data={data}
-            yonetici={yonetici}
-            logTemizle={logTemizle}
+            yonetici
+            logTemizle={islem.onClearLog}
             onYedekAl={islem.onYedekAl}
             onGeriYukle={islem.onGeriYukle}
             onGeriAl={islem.onGeriAl}
