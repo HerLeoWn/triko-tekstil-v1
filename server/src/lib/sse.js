@@ -4,17 +4,19 @@ const baglantilar = new Set();
 
 // GET /api/olaylar: tarayıcı buraya bağlanır ve bildirimleri dinler
 export function olaylarRoute(req, res) {
+  // HTTP/2 üzerinde "Connection" başlığı yasak. Railway bu başlık yüzünden bağlantıyı keser.
+  // X-Accel-Buffering: ara katmanın yanıtı tamponlamasını engeller.
   res.set({
     'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
+    'Cache-Control': 'no-cache, no-transform',
+    'X-Accel-Buffering': 'no',
   });
   res.flushHeaders();
   res.write('retry: 3000\n\n');
   baglantilar.add(res);
 
-  // Bağlantıyı canlı tutmak için periyodik sinyal
-  const ping = setInterval(() => res.write(': ping\n\n'), 25000);
+  // Boşta kalan bağlantıyı canlı tutmak için kısa aralıklı sinyal
+  const ping = setInterval(() => res.write(': ping\n\n'), 15000);
   req.on('close', () => {
     clearInterval(ping);
     baglantilar.delete(res);
