@@ -99,7 +99,7 @@ function YoneticiEkrani({ kullanici, onCikis }) {
         />
 
         <main className="mx-auto grid max-w-6xl gap-4 p-4 sm:p-6 lg:grid-cols-[1fr_300px]">
-          <section className="card min-w-0 animate-fadeUp">
+          <section className="card relative z-10 min-w-0">
             <SekmeMenu
               tabs={TABS}
               tab={tab}

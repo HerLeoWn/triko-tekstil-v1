@@ -15,7 +15,7 @@ export function SekmeMenu({ tabs, tab, setTab, uyariSayisi = 0, q, setQ }) {
   }, []);
 
   return (
-    <div ref={kapRef} className="flex flex-wrap items-center gap-2 border-b border-line p-3">
+    <div ref={kapRef} className="relative z-50 flex flex-wrap items-center gap-2 border-b border-line p-3">
       <div className="relative">
         <button
           type="button"
@@ -27,14 +27,14 @@ export function SekmeMenu({ tabs, tab, setTab, uyariSayisi = 0, q, setQ }) {
         </button>
 
         {acik && (
-          <div className="absolute left-0 z-30 mt-1 w-64 overflow-hidden rounded-xl border border-line bg-card shadow-soft">
+          <div className="absolute left-0 z-50 mt-1 w-64 overflow-hidden rounded-xl border border-line bg-white shadow-soft">
             {tabs.map(([k, ad]) => (
               <button
                 key={k}
                 type="button"
                 onClick={() => { setTab(k); setAcik(false); }}
-                className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm hover:bg-track ${
-                  k === tab ? 'font-semibold text-accent' : ''
+                className={`flex w-full items-center justify-between bg-white px-3 py-2.5 text-left text-sm hover:bg-track ${
+                  k === tab ? 'font-semibold text-accent' : 'text-ink'
                 }`}
               >
                 <span>{ad}</span>
