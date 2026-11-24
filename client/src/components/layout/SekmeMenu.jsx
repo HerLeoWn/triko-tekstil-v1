@@ -1,54 +1,45 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
-// Sekmeler tek bir açılır menüde. Arama kutusu yanında durur.
+// Sekmeler yatay, kaydırılabilir bir çubukta durur. Açılır katman yoktur, üst üste binme olmaz.
 export function SekmeMenu({ tabs, tab, setTab, uyariSayisi = 0, q, setQ }) {
-  const [acik, setAcik] = useState(false);
-  const kapRef = useRef(null);
-  const aktif = tabs.find(([k]) => k === tab);
+  const aktifRef = useRef(null);
 
+  // Seçili sekme her zaman görünür alana kaydırılır
   useEffect(() => {
-    const disTikla = (e) => {
-      if (kapRef.current && !kapRef.current.contains(e.target)) setAcik(false);
-    };
-    document.addEventListener('mousedown', disTikla);
-    return () => document.removeEventListener('mousedown', disTikla);
-  }, []);
+    aktifRef.current?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
+  }, [tab]);
 
   return (
-    <div ref={kapRef} className="relative z-50 flex flex-wrap items-center gap-2 border-b border-line p-3">
-      <div className="relative">
-        <button
-          type="button"
-          onClick={() => setAcik((o) => !o)}
-          className="btn-ghost flex min-w-[200px] items-center justify-between gap-3"
-        >
-          <span>{aktif?.[1] ?? 'Seç'}</span>
-          <span className="text-muted">{acik ? '▴' : '▾'}</span>
-        </button>
-
-        {acik && (
-          <div className="absolute left-0 z-50 mt-1 w-64 overflow-hidden rounded-xl border border-line bg-white shadow-soft">
-            {tabs.map(([k, ad]) => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => { setTab(k); setAcik(false); }}
-                className={`flex w-full items-center justify-between bg-white px-3 py-2.5 text-left text-sm hover:bg-track ${
-                  k === tab ? 'font-semibold text-accent' : 'text-ink'
-                }`}
-              >
-                <span>{ad}</span>
-                {k === 'uyari' && uyariSayisi > 0 && (
-                  <span className="rounded-full bg-warn-soft px-2 py-0.5 text-xs text-warn">{uyariSayisi}</span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
+    <div className="flex flex-col gap-3 border-b border-line p-3">
+      <div className="flex gap-1.5 overflow-x-auto pb-1">
+        {tabs.map(([k, ad]) => {
+          const aktif = k === tab;
+          return (
+            <button
+              key={k}
+              ref={aktif ? aktifRef : null}
+              type="button"
+              onClick={() => setTab(k)}
+              aria-pressed={aktif}
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm transition ${
+                aktif ? 'bg-accent text-white shadow-soft' : 'bg-track text-muted hover:text-ink'
+              }`}
+            >
+              <span>{ad}</span>
+              {k === 'uyari' && uyariSayisi > 0 && (
+                <span className={`rounded-full px-1.5 text-[11px] font-semibold ${
+                  aktif ? 'bg-white/25 text-white' : 'bg-warn-soft text-warn'
+                }`}>
+                  {uyariSayisi}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <input
-        className="inp min-w-0 flex-1 sm:max-w-xs"
+        className="inp w-full"
         placeholder="Ara…"
         value={q}
         onChange={(e) => setQ(e.target.value)}
