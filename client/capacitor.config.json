@@ -1,0 +1,9 @@
+{
+  "appId": "com.batekstil.triko",
+  "appName": "Triko",
+  "webDir": "dist",
+  "server": {
+    "url": "https://triko-tekstil-v1-production.up.railway.app",
+    "cleartext": false
+  }
+}
