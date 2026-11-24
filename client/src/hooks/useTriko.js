@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
 
 export const enc = encodeURIComponent;
@@ -8,11 +8,13 @@ const BOS_VERI = {
   yedekler: [], geriAl: null, uyari: null, kullanicilar: [],
 };
 
-// Sunucudan tüm verileri çeker, filtre değişince ve canlı güncellemede yeniler.
+const ARALIK = 5000; // veriler bu aralıkla (ms) yenilenir
+
+// Sunucudan tüm verileri çeker. Her 5 saniyede bir yeniler, filtre değişince de yeniler.
 // run(fn): bir yazma işlemi yapar, bittiğinde veriyi yeniler.
 export function useTriko({ yonetici, q, cuvalDurum, esik, gun }) {
   const [data, setData] = useState(BOS_VERI);
-  const [canli, setCanli] = useState(false);
+  const [canli, setCanli] = useState(true);
 
   const refresh = useCallback(async () => {
     try {
@@ -28,31 +30,24 @@ export function useTriko({ yonetici, q, cuvalDurum, esik, gun }) {
         yonetici ? api.get('/api/kullanicilar') : Promise.resolve([]),
       ]);
       setData({ stok, cuvallar, giden, biten, hareket, yedekler, geriAl, uyari, kullanicilar });
-    } catch (e) {
-      if (e.status !== 401) alert(e.message);
+      setCanli(true);
+    } catch {
+      // Oturum dolduysa api.js zaten giriş ekranına yönlendirir. Diğer hatalarda bağlantı "Kesik" görünür.
+      setCanli(false);
     }
   }, [q, cuvalDurum, esik, gun, yonetici]);
 
-  const refreshRef = useRef(refresh);
-  refreshRef.current = refresh;
-
-  useEffect(() => { refresh(); }, [refresh]);
-
-  // Canlı güncelleme: sunucu "değişti" dediğinde kısa gecikmeyle yenile
+  // İlk yükleme, periyodik yenileme ve sekme tekrar görünür olunca yenileme
   useEffect(() => {
-    let zaman;
-    const es = new EventSource('/api/olaylar');
-    es.onopen = () => setCanli(true);
-    es.onerror = () => setCanli(false);
-    es.onmessage = () => {
-      clearTimeout(zaman);
-      zaman = setTimeout(() => refreshRef.current?.(), 150);
-    };
+    refresh();
+    const t = setInterval(() => { if (!document.hidden) refresh(); }, ARALIK);
+    const gorunur = () => { if (!document.hidden) refresh(); };
+    document.addEventListener('visibilitychange', gorunur);
     return () => {
-      clearTimeout(zaman);
-      es.close();
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', gorunur);
     };
-  }, []);
+  }, [refresh]);
 
   const run = async (fn) => {
     try {
