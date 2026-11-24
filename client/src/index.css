@@ -75,3 +75,67 @@
     border-radius: 0 !important;
   }
 }
+
+/* ---- Responsive temel düzeltmeler (bileşenlere dokunmadan) ---- */
+
+/* Yatay taşmayı engeller. Yalnızca body'de tanımlanır ki sticky üst bar bozulmasın */
+body {
+  overflow-x: hidden;
+}
+
+img, svg, canvas, video {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Grid ve flex çocukları taşmaya izin vermesin */
+main > *,
+section > * {
+  min-width: 0;
+}
+
+/* Tablet ve telefon: tablolar yatay kaydırılabilir olsun */
+@media (max-width: 1023px) {
+  table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}
+
+/* Telefon: dokunma alanları büyür, iOS'ta input'a basınca sayfa zoom yapmaz */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  button,
+  .btn,
+  .btn-ghost {
+    min-height: 40px;
+  }
+
+  .btn-sm,
+  .btn-ghost.btn-sm {
+    min-height: 36px;
+  }
+
+  /* Modal ya da pencereler telefonda ekrandan taşmasın */
+  [role="dialog"],
+  .modal {
+    max-height: 92vh;
+    max-height: 92dvh;
+    overflow-y: auto;
+  }
+}
+
+/* Alttaki mobil menü iPhone'larda ev çizgisinin altında kalmasın */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .mobil-alt,
+  .fixed.bottom-0 {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
