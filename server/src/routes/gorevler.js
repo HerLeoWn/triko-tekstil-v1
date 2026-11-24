@@ -253,4 +253,33 @@ router.post('/api/gorevler/:id/iptal', wrap((req, res) => {
   res.json({ ok: true });
 }));
 
+const BITMIS = ['tamamlandi', 'iptal', 'reddedildi'];
+
+// Sil (depo sorumlusu): yalnızca bitmiş görevler silinir. Giden kayıtları ve stok etkilenmez.
+router.delete('/api/gorevler/:id', wrap((req, res) => {
+  const g = gorevAl(req.params.id);
+  if (!BITMIS.includes(g.durum)) {
+    throw new Error('Yalnızca tamamlanmış, iptal edilmiş ya da reddedilmiş görevler silinebilir.');
+  }
+  db.transaction(() => {
+    db.prepare('DELETE FROM gorev_kalemler WHERE gorev_id = ?').run(g.id);
+    db.prepare('DELETE FROM gorevler WHERE id = ?').run(g.id);
+  })();
+  res.json({ ok: true });
+}));
+
+// Toplu temizle: bitmiş tüm görevleri siler
+router.post('/api/gorevler/temizle', wrap((req, res) => {
+  const ids = db.prepare(
+    `SELECT id FROM gorevler WHERE durum IN (${BITMIS.map(() => '?').join(',')})`
+  ).all(...BITMIS).map((r) => r.id);
+  db.transaction(() => {
+    ids.forEach((id) => {
+      db.prepare('DELETE FROM gorev_kalemler WHERE gorev_id = ?').run(id);
+      db.prepare('DELETE FROM gorevler WHERE id = ?').run(id);
+    });
+  })();
+  res.json({ ok: true, silinen: ids.length });
+}));
+
 export default router;

@@ -4,16 +4,19 @@ import { DURUM, kodGruplari } from '../../lib/gorev.js';
 import { tarihYazi } from '../../lib/tarih.js';
 import { Empty } from '../ui/Empty.jsx';
 
-// Depo sorumlusunun görev paneli: kabul, red ve (kısmi) gönderim. Kodlar gruplu gösterilir.
+const BITMIS = ['tamamlandi', 'iptal', 'reddedildi'];
+
+// Depo sorumlusunun görev paneli: kabul, red, gönderim, silme. Kodlar gruplu gösterilir.
 export function GorevPaneli({ liste, yenile }) {
   const [neden, setNeden] = useState({});
   const [sevk, setSevk] = useState({});
   const [hata, setHata] = useState('');
 
-  const istek = async (yol, body) => {
+  // İşlemi çalıştırır, hata varsa gösterir, başarılıysa listeyi yeniler
+  const calistir = async (fn) => {
     setHata('');
     try {
-      await api.post(yol, body);
+      await fn();
       yenile();
       return true;
     } catch (e) {
@@ -27,7 +30,7 @@ export function GorevPaneli({ liste, yenile }) {
       .map((k) => ({ kalemId: k.id, seri: parseInt(sevk[k.id], 10) || 0 }))
       .filter((s) => s.seri > 0);
     if (!satirlar.length) return setHata('Gönderilecek seri girin.');
-    if (await istek(`/api/gorevler/${g.id}/gonder`, { satirlar })) {
+    if (await calistir(() => api.post(`/api/gorevler/${g.id}/gonder`, { satirlar }))) {
       setSevk((s) => {
         const yeni = { ...s };
         g.kalemler.forEach((k) => delete yeni[k.id]);
@@ -36,11 +39,31 @@ export function GorevPaneli({ liste, yenile }) {
     }
   };
 
+  const sil = (g) => {
+    if (!window.confirm('Bu görev listeden silinsin mi? Giden kayıtları ve stok değişmez.')) return;
+    calistir(() => api.del(`/api/gorevler/${g.id}`));
+  };
+
+  const topluTemizle = (sayi) => {
+    if (!window.confirm(`${sayi} bitmiş görev silinsin mi? Giden kayıtları ve stok değişmez.`)) return;
+    calistir(() => api.post('/api/gorevler/temizle'));
+  };
+
   if (!liste.length) return <Empty text="Muhasebeden gelen görev yok." />;
+
+  const bitenSayi = liste.filter((g) => BITMIS.includes(g.durum)).length;
 
   return (
     <div className="space-y-3">
       {hata && <p className="rounded-lg bg-warn-soft p-2.5 text-sm text-warn">⚠ {hata}</p>}
+
+      {bitenSayi > 0 && (
+        <div className="flex justify-end">
+          <button className="btn-ghost btn-sm" onClick={() => topluTemizle(bitenSayi)}>
+            Bitmiş görevleri temizle ({bitenSayi})
+          </button>
+        </div>
+      )}
 
       {liste.map((g) => {
         const d = DURUM[g.durum] ?? DURUM.bekliyor;
@@ -103,7 +126,7 @@ export function GorevPaneli({ liste, yenile }) {
 
             {g.durum === 'bekliyor' && (
               <div className="mt-3 flex flex-wrap gap-2">
-                <button className="btn btn-sm" onClick={() => istek(`/api/gorevler/${g.id}/kabul`)}>
+                <button className="btn btn-sm" onClick={() => calistir(() => api.post(`/api/gorevler/${g.id}/kabul`))}>
                   Görevi kabul et
                 </button>
                 <input
@@ -114,7 +137,7 @@ export function GorevPaneli({ liste, yenile }) {
                 />
                 <button
                   className="btn-ghost btn-sm"
-                  onClick={() => istek(`/api/gorevler/${g.id}/reddet`, { neden: neden[g.id] ?? '' })}
+                  onClick={() => calistir(() => api.post(`/api/gorevler/${g.id}/reddet`, { neden: neden[g.id] ?? '' }))}
                 >
                   Reddet
                 </button>
@@ -124,6 +147,12 @@ export function GorevPaneli({ liste, yenile }) {
             {gonderilebilir && (
               <div className="mt-3 text-right">
                 <button className="btn btn-sm" onClick={() => gonder(g)}>Depoya gönder</button>
+              </div>
+            )}
+
+            {BITMIS.includes(g.durum) && (
+              <div className="mt-3 text-right">
+                <button className="btn-ghost btn-sm" onClick={() => sil(g)}>Görevi sil</button>
               </div>
             )}
           </div>
