@@ -9,7 +9,7 @@ import { useIslemler } from '../hooks/useIslemler.js';
 import { useMesajlar } from '../hooks/useMesajlar.js';
 import { useGorevler } from '../hooks/useGorevler.js';
 import Baslik from '../components/layout/Baslik.jsx';
-import SekmeCubugu from '../components/layout/SekmeCubugu.jsx';
+import { SekmeMenu } from '../components/layout/SekmeMenu.jsx';
 import YanPanel from '../components/layout/YanPanel.jsx';
 import { MesajPaneli } from '../components/mesaj/MesajPaneli.jsx';
 import { MuhasebeSayfa } from '../components/muhasebe/MuhasebeSayfa.jsx';
@@ -63,7 +63,7 @@ function YoneticiEkrani({ kullanici, onCikis }) {
 
   const [tab, setTab] = useState('stok');
   const [q, setQ] = useState('');
-  const [cuvalDurum, setCuvalDurum] = useState('');
+  const [cuvalDurum] = useState('');
   const [esik, setEsik] = useState(() => ayarOku('triko-esik', 10));
   const [gun, setGun] = useState(() => ayarOku('triko-gun', 14));
   const [raporAcik, setRaporAcik] = useState(false);
@@ -100,15 +100,13 @@ function YoneticiEkrani({ kullanici, onCikis }) {
 
         <main className="mx-auto grid max-w-6xl gap-4 p-4 sm:p-6 lg:grid-cols-[1fr_300px]">
           <section className="card min-w-0 animate-fadeUp">
-            <SekmeCubugu
+            <SekmeMenu
               tabs={TABS}
               tab={tab}
               setTab={setTab}
               uyariSayisi={uyariSayisi}
               q={q}
               setQ={setQ}
-              cuvalDurum={cuvalDurum}
-              setCuvalDurum={setCuvalDurum}
             />
             {tab === 'gelen' ? (
               <GelenMallarPaneli yonetici />

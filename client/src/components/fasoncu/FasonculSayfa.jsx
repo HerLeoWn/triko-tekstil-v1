@@ -1,33 +1,74 @@
 import { useEffect, useRef, useState } from 'react';
-import { api } from '../../api.js';
+import { get, post, put, del } from '../../lib/istek.js';
 import { MapPaneli } from '../harita/MapPaneli.jsx';
-import { osrmRota, enYakinSiraya, sureYazi, adaAra } from '../../lib/rota.js';
+import { osrmRota, adaAra, mesafeM, sureYazi } from '../../lib/rota.js';
 
-const BOS_FORM = { urunAd: '', urunKod: '', cuval: '', toplamSeri: '' };
+const DURAK_YAKIN_M = 150;
+const BOS_KALEM = { urunAd: '', urunKod: '', renk: '', cuval: '', toplamSeri: '' };
+const bugunKey = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Istanbul' });
+const saatYazi = (iso) => new Date(iso).toLocaleString('tr-TR', {
+  timeZone: 'Europe/Istanbul', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+});
 
-// Fasoncu ekranı: gelen mal bildirimi, konum paylaşımı ve depoya rota
+const GELEN_DURUM = {
+  bekliyor: ['Muhasebe onayı bekliyor', 'bg-warn-soft text-warn'],
+  onaylandi: ['Onaylandı', 'bg-accent-soft text-accent'],
+  fasonda: ['Fasonda', 'bg-accent-soft text-accent'],
+  girildi: ['Sisteme girildi', 'bg-track text-muted'],
+  reddedildi: ['Reddedildi', 'bg-warn-soft text-danger'],
+};
+const ROTA_DURUM = {
+  aktif: ['Aktif', 'bg-accent-soft text-accent'],
+  beklemede: ['Beklemede', 'bg-warn-soft text-warn'],
+  pasif: ['Pasif', 'bg-track text-muted'],
+};
+
+function Rozet({ durum, harita }) {
+  const [yazi, cls] = harita[durum] ?? [durum, 'bg-track text-muted'];
+  return <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${cls}`}>{yazi}</span>;
+}
+
+const kalemYazi = (k) =>
+  `${k.urunAd}${k.urunKod ? ` (${k.urunKod})` : ''} · ${k.renk} · ${k.cuval} çuval${k.toplamSeri ? ` · ${k.toplamSeri} seri` : ''}`;
+
+// Fasoncu ekranı: gelen mal bildirimi, bildirimler, konum, rotasyonlar ve harita
 export function FasonculSayfa({ kullanici, onCikis }) {
-  const [form, setForm] = useState(BOS_FORM);
-  const [bildirim, setBildirim] = useState({ tur: '', yazi: '' });
-  const [paylasim, setPaylasim] = useState(false);
+  const [kalemler, setKalemler] = useState([{ ...BOS_KALEM }]);
+  const [gelenNot, setGelenNot] = useState({ tur: '', yazi: '' });
+  const [gelenler, setGelenler] = useState([]);
+  const [bildirimler, setBildirimler] = useState([]);
+  const [rotalar, setRotalar] = useState([]);
+
   const [konum, setKonum] = useState(null);
+  const [konumHata, setKonumHata] = useState('');
+  const [paylasim, setPaylasim] = useState(false);
   const konumRef = useRef(null);
-  const [depo, setDepo] = useState(null);
-  const [duraklar, setDuraklar] = useState([]);
-  const [rota, setRota] = useState(null);
+  const ziyaretIsaretli = useRef(new Set());
+
+  const [rotaForm, setRotaForm] = useState({ id: null, ad: '', duraklar: [] });
   const [aramaMetni, setAramaMetni] = useState('');
   const [sonuclar, setSonuclar] = useState([]);
+  const [secili, setSecili] = useState(null);
+  const [secRota, setSecRota] = useState(null);
   const [hata, setHata] = useState('');
 
+  const yukle = () => {
+    get('/api/fasoncu/gelen-mallar').then(setGelenler).catch(() => {});
+    get('/api/fasoncu/bildirimler').then(setBildirimler).catch(() => {});
+    get('/api/fasoncu/rotalar').then(setRotalar).catch(() => {});
+  };
+
   useEffect(() => {
-    api.get('/api/konum/depo').then((d) => setDepo(d?.lat ? d : null)).catch(() => {});
+    yukle();
+    const t = setInterval(yukle, 10000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Konum izlemesi (yalnızca paylaşım açıkken)
+  // Konum sayfa açıkken izlenir. Sunucuya gönderimi ayrıca paylaşım düğmesi yönetir.
   useEffect(() => {
-    if (!paylasim) return undefined;
     if (!navigator.geolocation) {
-      setHata('Bu cihaz konum desteklemiyor.');
+      setKonumHata('Bu cihaz konum desteklemiyor.');
       return undefined;
     }
     const id = navigator.geolocation.watchPosition(
@@ -35,47 +76,96 @@ export function FasonculSayfa({ kullanici, onCikis }) {
         const k = { lat: p.coords.latitude, lng: p.coords.longitude };
         konumRef.current = k;
         setKonum(k);
+        setKonumHata('');
       },
-      () => setHata('Konum alınamadı. Tarayıcıda konum iznini kontrol edin.'),
+      (err) => setKonumHata(
+        err.code === 1
+          ? 'Konum izni verilmemiş. Tarayıcı ya da cihaz ayarlarından konum iznini açıp sayfayı yenileyin.'
+          : 'Konum alınamadı, biraz sonra tekrar deneyin.',
+      ),
       { enableHighAccuracy: true, maximumAge: 5000 },
     );
     return () => navigator.geolocation.clearWatch(id);
-  }, [paylasim]);
+  }, []);
 
-  // Konum 15 saniyede bir sunucuya gönderilir
+  // Paylaşım açıkken konum 15 saniyede bir sunucuya gider
   useEffect(() => {
     if (!paylasim) return undefined;
-    const t = setInterval(() => {
-      if (konumRef.current) api.post('/api/konum/fasoncu', konumRef.current).catch(() => {});
-    }, 15000);
+    const gonder = () => {
+      if (konumRef.current) post('/api/konum/fasoncu', konumRef.current).catch(() => {});
+    };
+    gonder();
+    const t = setInterval(gonder, 15000);
     return () => clearInterval(t);
   }, [paylasim]);
 
-  const rotayiYenile = () => {
-    const k = konumRef.current;
-    if (!k || !depo) return;
-    setHata('');
-    const sirali = enYakinSiraya(k, duraklar);
-    osrmRota([k, ...sirali, depo]).then(setRota).catch(() => setHata('Rota alınamadı. Biraz sonra tekrar deneyin.'));
-  };
+  // Aktif bir rotanın durağına yakınsa, gün içinde ilk ziyaret sunucuya bildirilir
+  useEffect(() => {
+    if (!konum) return;
+    const bugun = bugunKey();
+    rotalar.forEach((r) => {
+      if (r.durum !== 'aktif' || r.sonZiyaretGun === bugun) return;
+      const anahtar = `${r.id}-${bugun}`;
+      if (ziyaretIsaretli.current.has(anahtar)) return;
+      if (r.duraklar.some((d) => mesafeM(konum, d) <= DURAK_YAKIN_M)) {
+        ziyaretIsaretli.current.add(anahtar);
+        post(`/api/fasoncu/rotalar/${r.id}/ziyaret`).then(yukle).catch(() => {});
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [konum, rotalar]);
 
-  // Konum ilk alındığında, depo bilgisi geldiğinde ya da ek durak değiştiğinde rotayı yeniden hesapla
+  // Seçili rotanın yol çizgisi (konum varsa konumdan başlar)
+  const secilen = rotalar.find((x) => x.id === secili) ?? null;
+  const secDurakAnahtar = secilen ? JSON.stringify(secilen.duraklar) : '';
   const konumVar = !!konum;
   useEffect(() => {
-    if (konumVar && depo) rotayiYenile();
+    if (!secilen) {
+      setSecRota(null);
+      return undefined;
+    }
+    const noktalar = konum ? [konum, ...secilen.duraklar] : secilen.duraklar;
+    if (noktalar.length < 2) {
+      setSecRota(null);
+      return undefined;
+    }
+    let iptal = false;
+    osrmRota(noktalar)
+      .then((r) => { if (!iptal) setSecRota(r); })
+      .catch(() => { if (!iptal) { setSecRota(null); setHata('Rota çizilemedi. Biraz sonra tekrar deneyin.'); } });
+    return () => { iptal = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [konumVar, depo, duraklar]);
+  }, [secili, secDurakAnahtar, konumVar]);
+
+  /* ---------- Gelen mal ---------- */
+
+  const kalemGuncelle = (i, alan, deger) =>
+    setKalemler((k) => k.map((x, j) => (j === i ? { ...x, [alan]: deger } : x)));
+  const kalemEkle = () => setKalemler((k) => [...k, { ...BOS_KALEM }]);
+  const kalemSil = (i) => setKalemler((k) => k.filter((_, j) => j !== i));
 
   const bildir = async () => {
-    setBildirim({ tur: '', yazi: '' });
+    setGelenNot({ tur: '', yazi: '' });
     try {
-      await api.post('/api/gelen-mallar', form);
-      setBildirim({ tur: 'ok', yazi: 'Muhasebeye bildirildi.' });
-      setForm(BOS_FORM);
+      await post('/api/fasoncu/gelen-mallar', { kalemler });
+      setGelenNot({ tur: 'ok', yazi: 'Muhasebeye bildirildi. Onay gelince bildirim göreceksiniz.' });
+      setKalemler([{ ...BOS_KALEM }]);
+      yukle();
     } catch (e) {
-      setBildirim({ tur: 'hata', yazi: e.message });
+      setGelenNot({ tur: 'hata', yazi: e.message });
     }
   };
+
+  const fasonaBasla = (id) => {
+    setHata('');
+    post(`/api/fasoncu/gelen-mallar/${id}/basla`).then(yukle).catch((e) => setHata(e.message));
+  };
+
+  const bildirimleriOkundu = () => {
+    post('/api/fasoncu/bildirimler/okundu').then(yukle).catch(() => {});
+  };
+
+  /* ---------- Rotasyonlar ---------- */
 
   const ara = async () => {
     setHata('');
@@ -87,18 +177,76 @@ export function FasonculSayfa({ kullanici, onCikis }) {
   };
 
   const durakEkle = (s) => {
-    setDuraklar((d) => [...d, { ad: s.ad.split(',')[0], lat: s.lat, lng: s.lng }]);
+    setRotaForm((f) => ({ ...f, duraklar: [...f.duraklar, { ad: s.ad.split(',')[0], lat: s.lat, lng: s.lng }] }));
     setSonuclar([]);
     setAramaMetni('');
   };
 
-  const noktalar = [
-    ...(depo ? [{ lat: depo.lat, lng: depo.lng, ad: 'Depo', renk: '#3d7a4f' }] : []),
-    ...(konum ? [{ lat: konum.lat, lng: konum.lng, ad: 'Ben', renk: '#2563eb' }] : []),
-    ...duraklar.map((d) => ({ lat: d.lat, lng: d.lng, ad: d.ad, renk: '#d97706' })),
-  ];
+  const durakTasi = (i, yon) => setRotaForm((f) => {
+    const d = [...f.duraklar];
+    const j = i + yon;
+    if (j < 0 || j >= d.length) return f;
+    [d[i], d[j]] = [d[j], d[i]];
+    return { ...f, duraklar: d };
+  });
 
-  const inputCls = 'inp';
+  const durakCikar = (i) =>
+    setRotaForm((f) => ({ ...f, duraklar: f.duraklar.filter((_, j) => j !== i) }));
+
+  const rotaFormSifirla = () => setRotaForm({ id: null, ad: '', duraklar: [] });
+
+  const rotaKaydet = async () => {
+    setHata('');
+    if (!rotaForm.ad.trim()) {
+      setHata('Rotasyona bir ad verin.');
+      return;
+    }
+    if (rotaForm.duraklar.length === 0) {
+      setHata('En az bir durak ekleyin.');
+      return;
+    }
+    const govde = { ad: rotaForm.ad.trim(), duraklar: rotaForm.duraklar };
+    try {
+      if (rotaForm.id) await put(`/api/fasoncu/rotalar/${rotaForm.id}`, govde);
+      else await post('/api/fasoncu/rotalar', govde);
+      rotaFormSifirla();
+      yukle();
+    } catch (e) {
+      setHata(e.message);
+    }
+  };
+
+  const rotaDuzenle = (r) => setRotaForm({ id: r.id, ad: r.ad, duraklar: r.duraklar });
+
+  const rotaSil = async (r) => {
+    if (!window.confirm(`"${r.ad}" rotasyonu silinsin mi?`)) return;
+    try {
+      await del(`/api/fasoncu/rotalar/${r.id}`);
+      if (secili === r.id) setSecili(null);
+      if (rotaForm.id === r.id) rotaFormSifirla();
+      yukle();
+    } catch (e) {
+      setHata(e.message);
+    }
+  };
+
+  const soruCevap = (r, yol, evet) => {
+    setHata('');
+    post(`/api/fasoncu/rotalar/${r.id}/${yol}`, { evet }).then(yukle).catch((e) => setHata(e.message));
+  };
+
+  const aktifeAl = (r) => {
+    setHata('');
+    post(`/api/fasoncu/rotalar/${r.id}/aktif`).then(yukle).catch((e) => setHata(e.message));
+  };
+
+  const okunmamis = bildirimler.filter((b) => !b.okundu);
+  const bugun = bugunKey();
+
+  const noktalar = [
+    ...(konum ? [{ lat: konum.lat, lng: konum.lng, ad: 'Ben', renk: '#2563eb' }] : []),
+    ...(secilen?.duraklar ?? []).map((d, i) => ({ lat: d.lat, lng: d.lng, ad: `${i + 1}. ${d.ad}`, renk: '#d97706' })),
+  ];
 
   return (
     <div className="min-h-screen bg-bg pb-10">
@@ -113,23 +261,82 @@ export function FasonculSayfa({ kullanici, onCikis }) {
       </header>
 
       <main className="mx-auto grid max-w-2xl gap-4 p-4">
-        <section className="card p-4">
-          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-wide text-muted">Gelen mal bildir</h2>
-          <div className="grid gap-2.5">
-            <input className={inputCls} placeholder="Ürün modeli (tam adı)" value={form.urunAd}
-              onChange={(e) => setForm({ ...form, urunAd: e.target.value })} />
-            <input className={inputCls} placeholder="Ürün kodu (biliyorsanız)" value={form.urunKod}
-              onChange={(e) => setForm({ ...form, urunKod: e.target.value })} />
-            <div className="grid grid-cols-2 gap-2.5">
-              <input className={inputCls} type="number" min="1" placeholder="Çuval sayısı" value={form.cuval}
-                onChange={(e) => setForm({ ...form, cuval: e.target.value })} />
-              <input className={inputCls} type="number" min="1" placeholder="Toplam seri (opsiyonel)" value={form.toplamSeri}
-                onChange={(e) => setForm({ ...form, toplamSeri: e.target.value })} />
+        {okunmamis.length > 0 && (
+          <section className="card border-l-4 border-accent p-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h2 className="text-[11px] font-medium uppercase tracking-wide text-muted">
+                Yeni bildirimler ({okunmamis.length})
+              </h2>
+              <button className="btn-ghost btn-sm" onClick={bildirimleriOkundu}>Tümünü okundu say</button>
             </div>
+            <div className="space-y-1.5">
+              {okunmamis.map((b) => (
+                <p key={b.id} className="text-sm">{b.metin}</p>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section className="card p-4">
+          <h2 className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted">Gelen mal bildir</h2>
+          <p className="mb-3 text-xs text-muted">Her renk ve her farklı kod ayrı kalem olarak girilir.</p>
+          <div className="grid gap-3">
+            {kalemler.map((k, i) => (
+              <div key={i} className="rounded-xl border border-line p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-sm font-medium">Kalem {i + 1}</span>
+                  {kalemler.length > 1 && (
+                    <button className="btn-ghost btn-sm" onClick={() => kalemSil(i)}>Kaldır</button>
+                  )}
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <input className="inp" placeholder="Ürün modeli (tam adı)" value={k.urunAd}
+                    onChange={(e) => kalemGuncelle(i, 'urunAd', e.target.value)} />
+                  <input className="inp" placeholder="Ürün kodu (opsiyonel)" value={k.urunKod}
+                    onChange={(e) => kalemGuncelle(i, 'urunKod', e.target.value)} />
+                  <input className="inp" placeholder="Renk" value={k.renk}
+                    onChange={(e) => kalemGuncelle(i, 'renk', e.target.value)} />
+                  <input className="inp" type="number" min="1" placeholder="Çuval sayısı" value={k.cuval}
+                    onChange={(e) => kalemGuncelle(i, 'cuval', e.target.value)} />
+                  <input className="inp sm:col-span-2" type="number" min="1" placeholder="Toplam seri (opsiyonel)"
+                    value={k.toplamSeri} onChange={(e) => kalemGuncelle(i, 'toplamSeri', e.target.value)} />
+                </div>
+              </div>
+            ))}
           </div>
-          <button className="btn mt-3" onClick={bildir}>Muhasebeye bildir</button>
-          {bildirim.yazi && (
-            <p className={`mt-2 text-sm ${bildirim.tur === 'ok' ? 'text-accent' : 'text-warn'}`}>{bildirim.yazi}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button className="btn-ghost btn-sm" onClick={kalemEkle}>+ Kalem ekle</button>
+            <button className="btn" onClick={bildir}>Muhasebeye bildir</button>
+          </div>
+          {gelenNot.yazi && (
+            <p className={`mt-2 text-sm ${gelenNot.tur === 'ok' ? 'text-accent' : 'text-warn'}`}>{gelenNot.yazi}</p>
+          )}
+        </section>
+
+        <section className="card p-4">
+          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-wide text-muted">Bildirimlerim</h2>
+          {gelenler.length === 0 ? (
+            <p className="text-sm text-muted">Henüz gelen mal bildirmediniz.</p>
+          ) : (
+            <div className="space-y-2">
+              {gelenler.map((g) => (
+                <div key={g.id} className="rounded-xl border border-line p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-xs tabular-nums text-muted">{saatYazi(g.tarih)}</span>
+                    <Rozet durum={g.durum} harita={GELEN_DURUM} />
+                  </div>
+                  <ul className="space-y-1 text-sm">
+                    {g.kalemler.map((k) => <li key={k.id}>{kalemYazi(k)}</li>)}
+                  </ul>
+                  {g.durum === 'reddedildi' && g.not && (
+                    <p className="mt-2 text-sm text-danger">Neden: {g.not}</p>
+                  )}
+                  {g.durum === 'onaylandi' && (
+                    <button className="btn btn-sm mt-3" onClick={() => fasonaBasla(g.id)}>Fasona başla</button>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </section>
 
@@ -141,57 +348,129 @@ export function FasonculSayfa({ kullanici, onCikis }) {
           <p className="mt-2 text-xs text-muted">
             Konum yalnızca bu sayfa açıkken paylaşılır. Uygulamayı kapatırsanız paylaşım durur.
           </p>
+          {konumHata && <p className="mt-2 text-sm text-warn">⚠ {konumHata}</p>}
+        </section>
+
+        <section className="card p-4">
+          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-wide text-muted">
+            {rotaForm.id ? 'Rotasyonu düzenle' : 'Yeni rotasyon'}
+          </h2>
+          <div className="grid gap-2.5">
+            <input className="inp" placeholder="Rotasyon adı (ör. İplikten mal alınır)" value={rotaForm.ad}
+              onChange={(e) => setRotaForm((f) => ({ ...f, ad: e.target.value }))} />
+            <div className="flex gap-2">
+              <input className="inp" placeholder="Durak adresi ya da yer adı" value={aramaMetni}
+                onChange={(e) => setAramaMetni(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && aramaMetni.trim() && ara()} />
+              <button className="btn-ghost btn-sm shrink-0" onClick={ara} disabled={!aramaMetni.trim()}>Ara</button>
+            </div>
+          </div>
+
+          {sonuclar.length > 0 && (
+            <div className="mt-2 space-y-1.5">
+              {sonuclar.map((s, i) => (
+                <div key={i} className="flex items-center justify-between gap-2 rounded-lg border border-line p-2 text-sm">
+                  <span className="line-clamp-2">{s.ad}</span>
+                  <button className="btn-ghost btn-sm shrink-0" onClick={() => durakEkle(s)}>Ekle</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {rotaForm.duraklar.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {rotaForm.duraklar.map((d, i) => (
+                <div key={i} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="min-w-0 truncate">{i + 1}. {d.ad}</span>
+                  <span className="flex shrink-0 gap-1">
+                    <button className="btn-ghost btn-sm" onClick={() => durakTasi(i, -1)} aria-label="Yukarı">↑</button>
+                    <button className="btn-ghost btn-sm" onClick={() => durakTasi(i, 1)} aria-label="Aşağı">↓</button>
+                    <button className="btn-ghost btn-sm" onClick={() => durakCikar(i)}>Kaldır</button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button className="btn" onClick={rotaKaydet}>{rotaForm.id ? 'Güncelle' : 'Rotasyonu kaydet'}</button>
+            {rotaForm.id && <button className="btn-ghost" onClick={rotaFormSifirla}>Vazgeç</button>}
+          </div>
+        </section>
+
+        <section className="card p-4">
+          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-wide text-muted">Rotasyonlarım</h2>
+          {rotalar.length === 0 ? (
+            <p className="text-sm text-muted">Henüz rotasyon yok. Yukarıdan ilk rotanızı kaydedin.</p>
+          ) : (
+            <div className="space-y-2.5">
+              {rotalar.map((r) => {
+                const ziyaret = r.sonZiyaretGun === bugun;
+                const soruGoster = r.durum === 'aktif' && ziyaret && r.soruGun !== bugun;
+                const cikisGoster = r.durum === 'aktif' && r.alindiGun === bugun && r.cikisGun !== bugun;
+                return (
+                  <div key={r.id} className="rounded-xl border border-line p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-semibold">{r.ad}</div>
+                        <div className="text-xs text-muted">{r.duraklar.map((d) => d.ad).join(' → ')}</div>
+                      </div>
+                      <Rozet durum={r.durum} harita={ROTA_DURUM} />
+                    </div>
+
+                    {ziyaret && <p className="mt-2 text-sm text-accent">✓ Bugün bu rotada ziyaret tespit edildi</p>}
+                    {r.alindiGun === bugun && <p className="text-sm text-accent">✓ Mal alındı</p>}
+
+                    {soruGoster && (
+                      <div className="mt-2 rounded-lg bg-track p-2.5">
+                        <p className="mb-2 text-sm">Mal alındı mı?</p>
+                        <div className="flex gap-2">
+                          <button className="btn btn-sm" onClick={() => soruCevap(r, 'alindi', true)}>Evet</button>
+                          <button className="btn-ghost btn-sm" onClick={() => soruCevap(r, 'alindi', false)}>Hayır</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {cikisGoster && (
+                      <div className="mt-2 rounded-lg bg-track p-2.5">
+                        <p className="mb-2 text-sm">Mal çıkacak mı?</p>
+                        <div className="flex gap-2">
+                          <button className="btn btn-sm" onClick={() => soruCevap(r, 'cikis', true)}>Evet, beklemede kalsın</button>
+                          <button className="btn-ghost btn-sm" onClick={() => soruCevap(r, 'cikis', false)}>Hayır, pasife al</button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button className="btn-ghost btn-sm" onClick={() => setSecili(secili === r.id ? null : r.id)}>
+                        {secili === r.id ? 'Haritayı gizle' : 'Haritada göster'}
+                      </button>
+                      <button className="btn-ghost btn-sm" onClick={() => rotaDuzenle(r)}>Düzenle</button>
+                      {r.durum !== 'aktif' && (
+                        <button className="btn-ghost btn-sm" onClick={() => aktifeAl(r)}>Aktife al</button>
+                      )}
+                      <button className="btn-ghost btn-sm text-danger" onClick={() => rotaSil(r)}>Sil</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         <section className="card p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-[11px] font-medium uppercase tracking-wide text-muted">Depoya rota</h2>
-            <button className="btn-ghost btn-sm" onClick={rotayiYenile} disabled={!konum || !depo}>
-              Rotayı yenile
-            </button>
-          </div>
-
-          {!depo && <p className="text-sm text-muted">Depo konumu henüz tanımlanmamış. Depo sorumlusu depoda bir kez kaydetmeli.</p>}
-
-          {rota && (
-            <p className="mb-3 text-sm">
-              Depoya tahmini <b>{sureYazi(rota.sureSn)}</b> · {(rota.mesafeM / 1000).toFixed(1)} km
-            </p>
-          )}
-
-          <MapPaneli noktalar={noktalar} cizgi={rota?.cizgi ?? null} />
-
-          <div className="mt-4">
-            <div className="mb-2 text-sm font-medium">Ek durak ekle</div>
-            <div className="flex gap-2">
-              <input className={inputCls} placeholder="Adres ya da yer adı" value={aramaMetni}
-                onChange={(e) => setAramaMetni(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && aramaMetni.trim() && ara()} />
-              <button className="btn-ghost btn-sm" onClick={ara} disabled={!aramaMetni.trim()}>Ara</button>
-            </div>
-            {sonuclar.length > 0 && (
-              <div className="mt-2 space-y-1.5">
-                {sonuclar.map((s, i) => (
-                  <div key={i} className="flex items-center justify-between gap-2 rounded-lg border border-line p-2 text-sm">
-                    <span className="line-clamp-2">{s.ad}</span>
-                    <button className="btn-ghost btn-sm shrink-0" onClick={() => durakEkle(s)}>Ekle</button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {duraklar.length > 0 && (
-              <div className="mt-3 space-y-1.5">
-                {duraklar.map((d, i) => (
-                  <div key={i} className="flex items-center justify-between gap-2 text-sm">
-                    <span>{i + 1}. {d.ad}</span>
-                    <button className="btn-ghost btn-sm" onClick={() => setDuraklar((x) => x.filter((_, j) => j !== i))}>Kaldır</button>
-                  </div>
-                ))}
-                <p className="text-xs text-muted">Duraklar, başlangıca en yakından başlayarak sıralanır.</p>
-              </div>
+            <h2 className="text-[11px] font-medium uppercase tracking-wide text-muted">Harita</h2>
+            {secRota && (
+              <span className="text-sm">
+                Tahmini <b>{sureYazi(secRota.sureSn)}</b> · {(secRota.mesafeM / 1000).toFixed(1)} km
+              </span>
             )}
           </div>
-
+          <MapPaneli noktalar={noktalar} cizgi={secRota?.cizgi ?? null} />
+          <p className="mt-2 text-xs text-muted">
+            Harita, haritada gösterdiğiniz rotayı çizer. Rota, durakları girdiğiniz sırayla bağlar.
+          </p>
           {hata && <p className="mt-3 text-sm text-warn">⚠ {hata}</p>}
         </section>
       </main>

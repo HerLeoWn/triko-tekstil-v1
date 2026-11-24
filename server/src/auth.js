@@ -2,15 +2,15 @@
 import crypto from 'node:crypto';
 import { db } from './db.js';
 
-// yonetici: Depo sorumlusu (her şey) · muhasebe: görev atar, giden düzenler, gelen malları görür · fasoncu: gelen mal bildirir, konum paylaşır
+// yonetici: Depo sorumlusu · muhasebe: görev atar, gelen malı onaylar · fasoncu: gelen mal bildirir, rotasyon yönetir, konum paylaşır
 export const ROLLER = ['yonetici', 'muhasebe', 'fasoncu'];
 const OTURUM_GUN = 30;
 const COOKIE = 'triko_oturum';
 const HERKESE_ACIK = ['/api/kurulum', '/api/giris', '/api/cikis', '/api/ben', '/api/sifre-talebi'];
 // Şifresini yenilemesi gereken kullanıcının erişebildiği yollar
 const SIFRE_ISTISNA = ['/api/hesap', '/api/ben', '/api/cikis'];
-// Fasoncu yalnızca bu okuma yollarını kullanabilir (stok, çuval, giden vb. görmez)
-const FASONCU_GET = ['/api/konum/depo', '/api/gelen-mallar', '/api/mesajlar'];
+// Fasoncu GET ile yalnızca kendi alanındaki verilere ulaşır (stok, çuval, giden vb. görmez)
+const FASONCU_GET = ['/api/fasoncu'];
 
 let aktifAd = 'sistem';
 export const getAktif = () => aktifAd;
@@ -107,6 +107,7 @@ export function kimlik(req, res, next) {
 // Hangi roller hangi isteği yapabilir. Liste null ise giriş yapmış herkes yapabilir.
 function izinliRoller(method, path) {
   if (path === '/api/hesap') return null;
+  if (path.startsWith('/api/fasoncu')) return ['fasoncu'];
   if (path.startsWith('/api/kullanicilar')) return ['yonetici'];
   if (path.startsWith('/api/sifre-talepleri')) return ['yonetici'];
   if (path.startsWith('/api/mesajlar') && method !== 'GET') return ['yonetici', 'muhasebe'];
@@ -117,8 +118,7 @@ function izinliRoller(method, path) {
   }
   if (path.startsWith('/api/konum/depo') && method !== 'GET') return ['yonetici'];
   if (path.startsWith('/api/konum/fasoncu')) return method === 'GET' ? ['yonetici', 'muhasebe'] : ['fasoncu'];
-  if (path === '/api/gelen-mallar' && method === 'POST') return ['fasoncu'];
-  if (path.startsWith('/api/gelen-mallar/')) return ['yonetici', 'muhasebe'];
+  if (path.startsWith('/api/gelen-mallar')) return ['yonetici', 'muhasebe'];
   if (method === 'GET') return null;
   if (path.startsWith('/api/yedek') || path === '/api/geri-al') return ['yonetici'];
   if (path.startsWith('/api/giden/') && method === 'PUT') return ['yonetici', 'muhasebe'];
