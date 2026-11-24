@@ -49,9 +49,22 @@ router.post('/api/kullanicilar', wrap((req, res) => {
   res.status(201).json(u);
 }));
 
+// Güncelleme: ad, kullanıcı adı, rol, aktiflik ve şifre. Gönderilmeyen alanlar değişmez.
 router.put('/api/kullanicilar/:id', wrap((req, res) => {
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!u) throw new Error('Kullanıcı bulunamadı.');
+
+  const ad = req.body.ad === undefined ? u.ad : String(req.body.ad).trim();
+  const kullanici = req.body.kullanici === undefined
+    ? u.kullanici
+    : String(req.body.kullanici).trim().toLowerCase();
+  if (!ad) throw new Error('Ad soyad boş olamaz.');
+  if (!/^[a-z0-9_.-]{3,}$/.test(kullanici)) {
+    throw new Error('Kullanıcı adı en az 3 karakter olmalı (harf, rakam, _ . -).');
+  }
+  if (kullanici !== u.kullanici && db.prepare('SELECT id FROM users WHERE kullanici = ?').get(kullanici)) {
+    throw new Error('Bu kullanıcı adı zaten var.');
+  }
 
   const rol = req.body.rol ?? u.rol;
   const aktif = req.body.aktif === undefined ? u.aktif : (req.body.aktif ? 1 : 0);
@@ -64,7 +77,8 @@ router.put('/api/kullanicilar/:id', wrap((req, res) => {
     if (n <= 1) throw new Error('En az bir aktif yönetici kalmalı.');
   }
 
-  db.prepare('UPDATE users SET rol = ?, aktif = ? WHERE id = ?').run(rol, aktif, u.id);
+  db.prepare('UPDATE users SET ad = ?, kullanici = ?, rol = ?, aktif = ? WHERE id = ?')
+    .run(ad, kullanici, rol, aktif, u.id);
 
   if (req.body.sifre) {
     if (String(req.body.sifre).length < 4) throw new Error('Şifre en az 4 karakter olmalı.');
@@ -73,8 +87,12 @@ router.put('/api/kullanicilar/:id', wrap((req, res) => {
   }
   if (!aktif) kullaniciOturumlariniKapat(u.id);
 
+  const degisenler = [];
+  if (ad !== u.ad) degisenler.push('ad');
+  if (kullanici !== u.kullanici) degisenler.push('kullanıcı adı');
+  if (req.body.sifre) degisenler.push('şifre');
   logH('kullanıcı güncellendi', '', '',
-    `${u.ad}: ${rol}${aktif ? '' : ', pasif'}${req.body.sifre ? ', şifre değişti' : ''}`);
+    `${ad} (${kullanici}): ${rol}${aktif ? '' : ', pasif'}${degisenler.length ? ', değişen: ' + degisenler.join(', ') : ''}`);
   res.json({ ok: true });
 }));
 

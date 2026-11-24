@@ -3,12 +3,14 @@ import { api } from '../../api.js';
 import { ConfirmButton } from '../../Confirm.jsx';
 import { ROL_ADI, ROL_ACIKLAMA } from '../../lib/roller.js';
 
-// Kullanıcı listesi, rol/aktif/şifre değişikliği, yeni kullanıcı ekleme (yalnızca yönetici)
+// Kullanıcı listesi: ad/kullanıcı adı düzenleme, rol/aktif, şifre, yeni kullanıcı ekleme (yalnızca yönetici)
 export function KullaniciPanel({ liste, benimId, yenile }) {
   const [f, setF] = useState({ ad: '', kullanici: '', sifre: '', rol: 'calisan' });
   const [hata, setHata] = useState('');
   const [sifreAcik, setSifreAcik] = useState(null);
   const [yeniSifre, setYeniSifre] = useState('');
+  const [duzenleAcik, setDuzenleAcik] = useState(null);
+  const [duzenle, setDuzenle] = useState({ ad: '', kullanici: '' });
 
   const islem = async (fn) => {
     setHata('');
@@ -27,6 +29,17 @@ export function KullaniciPanel({ liste, benimId, yenile }) {
 
   const guncelle = (id, patch) => islem(() => api.put(`/api/kullanicilar/${id}`, patch));
   const sil = (id) => islem(() => api.del(`/api/kullanicilar/${id}`));
+
+  const duzenleAc = (u) => {
+    setDuzenleAcik(u.id);
+    setDuzenle({ ad: u.ad, kullanici: u.kullanici });
+    setSifreAcik(null);
+  };
+
+  const duzenleKaydet = async (id) => {
+    await guncelle(id, { ad: duzenle.ad, kullanici: duzenle.kullanici });
+    setDuzenleAcik(null);
+  };
 
   return (
     <div className="space-y-5">
@@ -58,7 +71,13 @@ export function KullaniciPanel({ liste, benimId, yenile }) {
                   </button>
                   <button
                     className="btn-ghost btn-sm"
-                    onClick={() => setSifreAcik(sifreAcik === u.id ? null : u.id)}
+                    onClick={() => (duzenleAcik === u.id ? setDuzenleAcik(null) : duzenleAc(u))}
+                  >
+                    Düzenle
+                  </button>
+                  <button
+                    className="btn-ghost btn-sm"
+                    onClick={() => { setDuzenleAcik(null); setSifreAcik(sifreAcik === u.id ? null : u.id); }}
                   >
                     Şifre
                   </button>
@@ -71,6 +90,27 @@ export function KullaniciPanel({ liste, benimId, yenile }) {
                   )}
                 </div>
               </div>
+
+              {duzenleAcik === u.id && (
+                <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                  <input
+                    className="inp"
+                    placeholder="Ad soyad"
+                    value={duzenle.ad}
+                    onChange={(e) => setDuzenle({ ...duzenle, ad: e.target.value })}
+                  />
+                  <input
+                    className="inp"
+                    placeholder="Kullanıcı adı"
+                    value={duzenle.kullanici}
+                    onChange={(e) => setDuzenle({ ...duzenle, kullanici: e.target.value })}
+                  />
+                  <button className="btn btn-sm" onClick={() => duzenleKaydet(u.id)}>Kaydet</button>
+                  <p className="text-xs text-muted sm:col-span-3">
+                    Kullanıcı adı en az 3 karakter olmalı (harf, rakam, _ . -). Değişince yeni adla giriş yapması gerekir.
+                  </p>
+                </div>
+              )}
 
               {sifreAcik === u.id && (
                 <div className="mt-2 flex gap-2">
