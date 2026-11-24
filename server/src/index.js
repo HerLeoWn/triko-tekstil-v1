@@ -23,6 +23,7 @@ import kullanicilarRouter from './routes/kullanicilar.js';
 import raporRouter from './routes/rapor.js';
 import mesajlarRouter from './routes/mesajlar.js';
 import gorevlerRouter from './routes/gorevler.js';
+import sifreRouter from './routes/sifre.js';
 
 const app = express();
 app.use(cors());
@@ -40,7 +41,7 @@ app.use(degisiklikBildirimi);
 // İş rotaları
 [
   cuvallarRouter, gidenRouter, bitenRouter, stokRouter, depolarRouter, urunlerRouter,
-  hareketlerRouter, yedekRouter, kullanicilarRouter, raporRouter, gorevlerRouter,
+  hareketlerRouter, yedekRouter, kullanicilarRouter, raporRouter, gorevlerRouter,sifreRouter,
 ].forEach((r) => app.use(r));
 
 // Veritabanı dosyası silinmişse son yedek otomatik yüklenir, sonra periyodik yedek başlar

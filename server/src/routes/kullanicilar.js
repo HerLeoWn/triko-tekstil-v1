@@ -1,4 +1,4 @@
-// Oturum (ben, kurulum, giriş, çıkış) ve kullanıcı yönetimi
+// Oturum (ben, kurulum, giriş, çıkış), kullanıcı yönetimi ve hesabım
 import express from 'express';
 import { db } from '../db.js';
 import {
@@ -37,14 +37,55 @@ router.post('/api/cikis', (req, res) => {
   res.json({ ok: true });
 });
 
+/* ---------- Hesabım (herkes kendi bilgisini değiştirir) ---------- */
+
+// Mevcut şifre her zaman zorunlu. Yeni şifre girilirse diğer oturumlar kapanır.
+router.post('/api/hesap', wrap((req, res) => {
+  const me = db.prepare('SELECT * FROM users WHERE id = ?').get(req.kullanici.id);
+  if (!me) throw new Error('Kullanıcı bulunamadı.');
+  if (!girisDogrula(me.kullanici, req.body.mevcutSifre)) throw new Error('Mevcut şifre hatalı.');
+
+  const ad = req.body.ad === undefined ? me.ad : String(req.body.ad).trim();
+  const kullanici = req.body.kullanici === undefined
+    ? me.kullanici
+    : String(req.body.kullanici).trim().toLowerCase();
+  if (!ad) throw new Error('Ad soyad boş olamaz.');
+  if (!/^[a-z0-9_.-]{3,}$/.test(kullanici)) {
+    throw new Error('Kullanıcı adı en az 3 karakter olmalı (harf, rakam, _ . -).');
+  }
+  if (kullanici !== me.kullanici && db.prepare('SELECT id FROM users WHERE kullanici = ?').get(kullanici)) {
+    throw new Error('Bu kullanıcı adı zaten var.');
+  }
+
+  const yeniSifre = req.body.yeniSifre ? String(req.body.yeniSifre) : '';
+  if (yeniSifre && yeniSifre.length < 4) throw new Error('Yeni şifre en az 4 karakter olmalı.');
+  if (me.sifre_degistir && !yeniSifre) throw new Error('İlk girişte yeni şifre belirlemeniz gerekiyor.');
+
+  db.transaction(() => {
+    db.prepare('UPDATE users SET ad = ?, kullanici = ?, sifre = ?, sifre_degistir = 0 WHERE id = ?')
+      .run(ad, kullanici, yeniSifre ? sifreHash(yeniSifre) : me.sifre, me.id);
+    if (yeniSifre) {
+      db.prepare('DELETE FROM oturumlar WHERE kullanici_id = ? AND token != ?')
+        .run(me.id, req.oturumToken ?? '');
+    }
+  })();
+
+  logH('hesap güncellendi', '', '', `${ad} (${kullanici})${yeniSifre ? ', şifre değişti' : ''}`);
+  res.json({
+    ok: true,
+    kullanici: { id: me.id, ad, kullanici, rol: me.rol, sifreDegistir: false },
+  });
+}));
+
 /* ---------- Kullanıcılar (yalnızca yönetici, yetki auth.js'te kontrol edilir) ---------- */
 
 router.get('/api/kullanicilar', wrap((req, res) => {
   res.json(db.prepare('SELECT id, ad, kullanici, rol, aktif FROM users ORDER BY ad').all());
 }));
 
+// Yönetici eklediği kullanıcıya şifre verir, kullanıcı ilk girişte kendi şifresini belirler
 router.post('/api/kullanicilar', wrap((req, res) => {
-  const u = kullaniciOlustur(req.body);
+  const u = kullaniciOlustur({ ...req.body, sifreDegistir: true });
   logH('kullanıcı eklendi', '', '', `${u.ad} (${u.rol})`);
   res.status(201).json(u);
 }));
@@ -82,7 +123,8 @@ router.put('/api/kullanicilar/:id', wrap((req, res) => {
 
   if (req.body.sifre) {
     if (String(req.body.sifre).length < 4) throw new Error('Şifre en az 4 karakter olmalı.');
-    db.prepare('UPDATE users SET sifre = ? WHERE id = ?').run(sifreHash(String(req.body.sifre)), u.id);
+    db.prepare('UPDATE users SET sifre = ?, sifre_degistir = 1 WHERE id = ?')
+      .run(sifreHash(String(req.body.sifre)), u.id);
     kullaniciOturumlariniKapat(u.id);
   }
   if (!aktif) kullaniciOturumlariniKapat(u.id);

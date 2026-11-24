@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api.js';
 import { ConfirmButton } from '../../Confirm.jsx';
 import { ROL_ADI, ROL_ACIKLAMA } from '../../lib/roller.js';
 
-// Kullanıcı listesi: ad/kullanıcı adı düzenleme, rol/aktif, şifre, yeni kullanıcı ekleme (yalnızca yönetici)
+// Kullanıcı listesi, şifre talepleri, ad/kullanıcı adı düzenleme, rol/aktif, yeni kullanıcı ekleme (yalnızca yönetici)
 export function KullaniciPanel({ liste, benimId, yenile }) {
   const [f, setF] = useState({ ad: '', kullanici: '', sifre: '', rol: 'calisan' });
   const [hata, setHata] = useState('');
@@ -11,12 +11,33 @@ export function KullaniciPanel({ liste, benimId, yenile }) {
   const [yeniSifre, setYeniSifre] = useState('');
   const [duzenleAcik, setDuzenleAcik] = useState(null);
   const [duzenle, setDuzenle] = useState({ ad: '', kullanici: '' });
+  const [talepler, setTalepler] = useState([]);
+
+  const talepYukle = useCallback(() => {
+    api.get('/api/sifre-talepleri').then(setTalepler).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    talepYukle();
+    const t = setInterval(talepYukle, 10000);
+    return () => clearInterval(t);
+  }, [talepYukle]);
 
   const islem = async (fn) => {
     setHata('');
     try {
       await fn();
       yenile();
+    } catch (e) {
+      setHata(e.message);
+    }
+  };
+
+  const talepKarar = async (id, karar) => {
+    setHata('');
+    try {
+      await api.post(`/api/sifre-talepleri/${id}/${karar}`);
+      talepYukle();
     } catch (e) {
       setHata(e.message);
     }
@@ -43,6 +64,29 @@ export function KullaniciPanel({ liste, benimId, yenile }) {
 
   return (
     <div className="space-y-5">
+      {talepler.length > 0 && (
+        <div>
+          <h4 className="mb-2 text-sm font-semibold">Şifre değişikliği talepleri</h4>
+          <div className="space-y-2">
+            {talepler.map((t) => (
+              <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warn p-3">
+                <div>
+                  <div className="font-semibold">{t.ad}</div>
+                  <div className="text-xs text-muted">
+                    {t.kullanici} · {new Date(t.tarih).toLocaleString('tr-TR')}
+                  </div>
+                  <div className="mt-1 text-sm">Kullanıcı şifresini değiştirme talebinde bulundu. Onaylıyor musunuz?</div>
+                </div>
+                <div className="flex gap-1.5">
+                  <button className="btn btn-sm" onClick={() => talepKarar(t.id, 'onayla')}>Evet</button>
+                  <button className="btn-ghost btn-sm" onClick={() => talepKarar(t.id, 'reddet')}>Hayır</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div>
         <h4 className="mb-2 text-sm font-semibold">Kullanıcılar</h4>
         <div className="space-y-2">

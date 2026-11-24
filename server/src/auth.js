@@ -6,7 +6,9 @@ import { db } from './db.js';
 export const ROLLER = ['yonetici', 'calisan', 'izleyici', 'muhasebe'];
 const OTURUM_GUN = 30;
 const COOKIE = 'triko_oturum';
-const HERKESE_ACIK = ['/api/kurulum', '/api/giris', '/api/cikis', '/api/ben'];
+const HERKESE_ACIK = ['/api/kurulum', '/api/giris', '/api/cikis', '/api/ben', '/api/sifre-talebi'];
+// Şifresini yenilemesi gereken kullanıcının erişebildiği yollar
+const SIFRE_ISTISNA = ['/api/hesap', '/api/ben', '/api/cikis'];
 
 let aktifAd = 'sistem';
 export const getAktif = () => aktifAd;
@@ -27,7 +29,7 @@ function sifreDogrula(sifre, kayit) {
 export const kullaniciSayisi = () =>
   db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
 
-export function kullaniciOlustur({ ad, kullanici, sifre, rol = 'calisan' }) {
+export function kullaniciOlustur({ ad, kullanici, sifre, rol = 'calisan', sifreDegistir = false }) {
   const a = String(ad ?? '').trim();
   const k = String(kullanici ?? '').trim().toLowerCase();
   if (!a || !k) throw new Error('Ad ve kullanıcı adı zorunlu.');
@@ -38,8 +40,8 @@ export function kullaniciOlustur({ ad, kullanici, sifre, rol = 'calisan' }) {
     throw new Error('Bu kullanıcı adı zaten var.');
   }
   const id = crypto.randomUUID();
-  db.prepare('INSERT INTO users (id, ad, kullanici, sifre, rol, aktif, olusturma) VALUES (?,?,?,?,?,1,?)')
-    .run(id, a, k, sifreHash(String(sifre)), rol, new Date().toISOString());
+  db.prepare('INSERT INTO users (id, ad, kullanici, sifre, rol, aktif, olusturma, sifre_degistir) VALUES (?,?,?,?,?,1,?,?)')
+    .run(id, a, k, sifreHash(String(sifre)), rol, new Date().toISOString(), sifreDegistir ? 1 : 0);
   return { id, ad: a, kullanici: k, rol };
 }
 
@@ -47,7 +49,10 @@ export function girisDogrula(kullanici, sifre) {
   const u = db.prepare('SELECT * FROM users WHERE kullanici = ? AND aktif = 1')
     .get(String(kullanici ?? '').trim().toLowerCase());
   if (!u || !sifreDogrula(String(sifre ?? ''), u.sifre)) return null;
-  return { id: u.id, ad: u.ad, kullanici: u.kullanici, rol: u.rol };
+  return {
+    id: u.id, ad: u.ad, kullanici: u.kullanici, rol: u.rol,
+    sifreDegistir: !!u.sifre_degistir,
+  };
 }
 
 export function oturumAc(userId) {
@@ -85,20 +90,23 @@ export function kimlik(req, res, next) {
   const token = cookieOku(req, COOKIE);
   const sinir = new Date(Date.now() - OTURUM_GUN * 86400000).toISOString();
   const row = token
-    ? db.prepare(`SELECT u.id, u.ad, u.kullanici, u.rol FROM oturumlar o
+    ? db.prepare(`SELECT u.id, u.ad, u.kullanici, u.rol, u.sifre_degistir FROM oturumlar o
                   JOIN users u ON u.id = o.kullanici_id
                   WHERE o.token = ? AND o.tarih > ? AND u.aktif = 1`).get(token, sinir)
     : null;
-  req.kullanici = row ?? null;
+  req.kullanici = row
+    ? { id: row.id, ad: row.ad, kullanici: row.kullanici, rol: row.rol, sifreDegistir: !!row.sifre_degistir }
+    : null;
   req.oturumToken = token;
   aktifAd = row?.ad ?? 'sistem';
   next();
 }
 
 // Hangi roller hangi isteği yapabilir. Liste null ise giriş yapmış herkes yapabilir.
-// Hangi roller hangi isteği yapabilir. Liste null ise giriş yapmış herkes yapabilir.
 function izinliRoller(method, path) {
+  if (path === '/api/hesap') return null; // Herkes kendi hesabını düzenleyebilir
   if (path.startsWith('/api/kullanicilar')) return ['yonetici'];
+    if (path.startsWith('/api/sifre-talepleri')) return ['yonetici'];
   if (path.startsWith('/api/mesajlar') && method !== 'GET') return ['yonetici', 'calisan', 'muhasebe'];
   if (path.startsWith('/api/gorevler') && method !== 'GET') {
     // Görev atama ve iptal muhasebeye ait; kabul, red ve gönderim depo sorumlusuna ait
@@ -117,6 +125,9 @@ function izinliRoller(method, path) {
 export function yetkiKontrol(req, res, next) {
   if (!req.path.startsWith('/api/') || HERKESE_ACIK.includes(req.path)) return next();
   if (!req.kullanici) return res.status(401).json({ error: 'Oturum gerekli.' });
+  if (req.kullanici.sifreDegistir && !SIFRE_ISTISNA.includes(req.path)) {
+    return res.status(403).json({ error: 'Önce yeni şifrenizi belirlemeniz gerekiyor.', sifreDegistir: true });
+  }
   const roller = izinliRoller(req.method, req.path);
   if (roller && !roller.includes(req.kullanici.rol)) {
     return res.status(403).json({ error: 'Bu işlem için yetkiniz yok.' });
