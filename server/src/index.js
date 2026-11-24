@@ -41,8 +41,7 @@ app.use(degisiklikBildirimi);
 
 // İş rotaları
 [
-  cuvallarRouter, gidenRouter, bitenRouter, stokRouter, depolarRouter, urunlerRouter,
-  hareketlerRouter, yedekRouter, kullanicilarRouter, raporRouter, gorevlerRouter, sifreRouter,
+    hareketlerRouter, yedekRouter, kullanicilarRouter, raporRouter, gorevlerRouter, sifreRouter, fasoncuRouter,
 ].forEach((r) => app.use(r));
 
 /* ---------- Acil durum şifre sıfırlama ---------- */
