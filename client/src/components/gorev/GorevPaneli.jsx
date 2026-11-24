@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { api } from '../../api.js';
-import { DURUM } from '../../lib/gorev.js';
+import { DURUM, kodGruplari } from '../../lib/gorev.js';
 import { tarihYazi } from '../../lib/tarih.js';
 import { Empty } from '../ui/Empty.jsx';
 
-// Depo sorumlusunun görev paneli: kabul, red ve (kısmi) gönderim
+// Depo sorumlusunun görev paneli: kabul, red ve (kısmi) gönderim. Kodlar gruplu gösterilir.
 export function GorevPaneli({ liste, yenile }) {
   const [neden, setNeden] = useState({});
   const [sevk, setSevk] = useState({});
@@ -57,38 +57,49 @@ export function GorevPaneli({ liste, yenile }) {
               <span className={`rounded-full px-2.5 py-1 text-xs ${d.renk}`}>{d.yazi}</span>
             </div>
 
-            <div className="mt-3 divide-y divide-line">
-              {g.kalemler.map((k) => {
-                const kalan = k.istenen - k.gonderilen;
-                return (
-                  <div key={k.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                    <div>
-                      <b>{k.kod}</b> {k.renk}
-                      <span className="ml-1 text-xs text-muted">
-                        ({k.kaynakDepo}{k.tur === 'manuel' ? ', elle girildi' : ''})
-                      </span>
-                      <div className="text-xs tabular-nums text-muted">
-                        İstenen {k.istenen} · Gönderilen {k.gonderilen} · Kalan {kalan}
-                      </div>
-                    </div>
-                    {gonderilebilir && kalan > 0 && (
-                      <input
-                        className="inp w-28"
-                        type="number"
-                        min="1"
-                        max={kalan}
-                        placeholder={`En fazla ${kalan}`}
-                        value={sevk[k.id] ?? ''}
-                        onChange={(e) => setSevk((s) => ({ ...s, [k.id]: e.target.value }))}
-                      />
-                    )}
+            <div className="mt-3 space-y-3">
+              {kodGruplari(g.kalemler).map((kg) => (
+                <div key={kg.kod}>
+                  <div className="font-bold">{kg.kod}</div>
+                  <div className="mt-1 divide-y divide-line pl-3">
+                    {kg.kalemler.map((k) => {
+                      const kalan = k.istenen - k.gonderilen;
+                      return (
+                        <div key={k.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                          <div>
+                            {k.renk}
+                            <span className="ml-1 text-xs text-muted">
+                              ({k.kaynakDepo}{k.tur === 'manuel' ? ', elle girildi' : ''})
+                            </span>
+                            <div className="text-xs tabular-nums text-muted">
+                              İstenen {k.istenen} · Gönderilen {k.gonderilen} · Kalan {kalan}
+                            </div>
+                          </div>
+                          {gonderilebilir && kalan > 0 && (
+                            <input
+                              className="inp w-28"
+                              type="number"
+                              min="1"
+                              max={kalan}
+                              placeholder={`En fazla ${kalan}`}
+                              value={sevk[k.id] ?? ''}
+                              onChange={(e) => setSevk((s) => ({ ...s, [k.id]: e.target.value }))}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
 
             {g.not && <p className="mt-2 text-xs text-muted">Not: {g.not}</p>}
-            {g.durum === 'reddedildi' && <p className="mt-2 text-sm text-warn">Neden: {g.redNedeni}</p>}
+            {(g.durum === 'reddedildi' || g.durum === 'iptal') && (
+              <p className="mt-2 text-sm text-warn">
+                {g.durum === 'iptal' ? 'İptal nedeni' : 'Neden'}: {g.redNedeni}
+              </p>
+            )}
 
             {g.durum === 'bekliyor' && (
               <div className="mt-3 flex flex-wrap gap-2">

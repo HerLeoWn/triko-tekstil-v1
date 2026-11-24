@@ -96,12 +96,14 @@ export function kimlik(req, res, next) {
 }
 
 // Hangi roller hangi isteği yapabilir. Liste null ise giriş yapmış herkes yapabilir.
+// Hangi roller hangi isteği yapabilir. Liste null ise giriş yapmış herkes yapabilir.
 function izinliRoller(method, path) {
   if (path.startsWith('/api/kullanicilar')) return ['yonetici'];
   if (path.startsWith('/api/mesajlar') && method !== 'GET') return ['yonetici', 'calisan', 'muhasebe'];
   if (path.startsWith('/api/gorevler') && method !== 'GET') {
-    // Görev atama muhasebeye; kabul, red ve gönderim depo sorumlusuna ait
-    return path === '/api/gorevler' ? ['muhasebe'] : ['yonetici'];
+    // Görev atama ve iptal muhasebeye ait; kabul, red ve gönderim depo sorumlusuna ait
+    if (path === '/api/gorevler' || path.endsWith('/iptal')) return ['muhasebe'];
+    return ['yonetici'];
   }
   if (method === 'GET') return null;
   if (path.startsWith('/api/yedek') || path === '/api/geri-al') return ['yonetici'];

@@ -231,4 +231,26 @@ router.post('/api/gorevler/:id/gonder', wrap((req, res) => {
   res.json({ ok: true });
 }));
 
+// İptal (muhasebe): bekleyen ya da kısmi görevde kalan seriler iptal edilir.
+// Daha önce gönderilen mallar geri alınmaz.
+router.post('/api/gorevler/:id/iptal', wrap((req, res) => {
+  const g = gorevAl(req.params.id);
+  if (!['bekliyor', 'kabul', 'kismi'].includes(g.durum)) throw new Error('Bu görev artık iptal edilemez.');
+  const neden = String(req.body.neden ?? '').trim().slice(0, 300) || 'Belirtilmedi';
+
+  const kalemler = db.prepare('SELECT * FROM gorev_kalemler WHERE gorev_id = ?').all(g.id);
+  const kalan = kalemler.reduce((s, k) => s + Math.max(0, k.istenen - k.gonderilen), 0);
+
+  db.transaction(() => {
+    db.prepare("UPDATE gorevler SET durum = 'iptal', red_nedeni = ?, guncelleme = ? WHERE id = ?")
+      .run(neden, now(), g.id);
+    bildir('gorev', 'yonetici',
+      `GÖREV İPTAL EDİLDİ · ${tarihYazi(g.tarih)} · ${g.hedef_ad}\nNeden: ${neden}\nKalan ${kalan} seri iptal edildi.`,
+      req.kullanici.ad);
+  })();
+
+  logH('görev iptal', '', '', `${g.hedef_ad}: ${kalan} seri iptal`);
+  res.json({ ok: true });
+}));
+
 export default router;

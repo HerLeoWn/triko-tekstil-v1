@@ -9,6 +9,7 @@ import { MesajPaneli } from '../mesaj/MesajPaneli.jsx';
 import { GorevCanli } from '../gorev/GorevCanli.jsx';
 import { GorevFormu } from '../gorev/GorevFormu.jsx';
 import { Empty } from '../ui/Empty.jsx';
+import { StokCanli } from './StokCanli.jsx';
 
 const kodSirala = (a, b) => a.localeCompare(b, 'tr', { numeric: true });
 
@@ -91,6 +92,10 @@ export function MuhasebeSayfa({ kullanici, onCikis, liste, okunmamis, yenile }) 
       </header>
 
       <main className="mx-auto grid max-w-6xl gap-4 p-4 sm:p-6">
+        <section className="card p-4">
+          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-wide text-muted">Stok · canlı</h2>
+          <StokCanli />
+        </section>
         {hata && <p className="rounded-lg bg-warn-soft p-2.5 text-sm text-warn">⚠ {hata}</p>}
 
         <section className="card p-4">
