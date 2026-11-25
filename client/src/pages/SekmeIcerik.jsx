@@ -36,7 +36,7 @@ export default function SekmeIcerik({
       );
 
     case 'biten':
-      return <BitenListe groups={data.biten} onDeleteGroup={grupSil} />;
+            return <BitenListe groups={data.biten} onDeleteGroup={grupSil} onEdit={(g) => setForm({ type: 'gidenDuz', item: g })} />;
 
     case 'uyari':
       return <UyariListe data={data.uyari} esik={esik} gun={gun} setEsik={setEsik} setGun={setGun} />;
