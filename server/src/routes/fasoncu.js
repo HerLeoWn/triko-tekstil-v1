@@ -353,4 +353,18 @@ router.post('/api/fasoncu/rotalar/:id/aktif', wrap((req, res) => {
   res.json({ ok: true });
 }));
 
+// Fasoncu kendi bildirimini siler. Yalnızca bekleyen ya da reddedilen kayıtlar silinebilir.
+router.delete('/api/fasoncu/gelen-mallar/:id', wrap((req, res) => {
+  const b = baslikBul(req.params.id);
+  if (b.gonderen_id !== req.kullanici.id) throw new Error('Bu bildirim size ait değil.');
+  if (!['bekliyor', 'reddedildi'].includes(b.durum)) {
+    throw new Error('Muhasebe onayı verilmiş bildirimler silinemez.');
+  }
+  db.transaction(() => {
+    db.prepare('DELETE FROM gelen_mal_kalem WHERE gelen_id = ?').run(b.id);
+    db.prepare('DELETE FROM gelen_mal WHERE id = ?').run(b.id);
+  })();
+  res.json({ ok: true });
+}));
+
 export default router;

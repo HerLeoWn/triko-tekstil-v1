@@ -40,10 +40,26 @@ export function MapPaneli({ noktalar = [], cizgi = null, yukseklik = 300 }) {
     }
   }, [noktalar, cizgi]);
 
+  // Ekran boyutu değişince ya da kart açılınca harita boyutunu yeniden hesapla
+  useEffect(() => {
+    const kap = kapRef.current;
+    if (!kap || typeof ResizeObserver === 'undefined') return undefined;
+    const gozlem = new ResizeObserver(() => haritaRef.current?.invalidateSize());
+    gozlem.observe(kap);
+    return () => gozlem.disconnect();
+  }, []);
+
   useEffect(() => () => {
     haritaRef.current?.remove();
     haritaRef.current = null;
   }, []);
 
-  return <div ref={kapRef} style={{ height: yukseklik }} className="w-full overflow-hidden rounded-xl border border-line" />;
+  // isolate + z-0: Leaflet'in katmanları kendi kutusunda kalır, başlık ve menülerin altına girmez
+  return (
+    <div
+      ref={kapRef}
+      style={{ height: yukseklik }}
+      className="isolate relative z-0 w-full overflow-hidden rounded-xl border border-line"
+    />
+  );
 }

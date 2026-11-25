@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { get, post, put, del } from '../../lib/istek.js';
 import { MapPaneli } from '../harita/MapPaneli.jsx';
 import { osrmRota, adaAra, mesafeM, sureYazi } from '../../lib/rota.js';
+import { ConfirmButton } from '../../Confirm.jsx';
 
 const DURAK_YAKIN_M = 150;
 const BOS_KALEM = { urunAd: '', urunKod: '', renk: '', cuval: '', toplamSeri: '' };
@@ -162,6 +163,10 @@ export function FasonculSayfa({ kullanici, onCikis }) {
   };
 
   const bildirimleriOkundu = () => {
+    const gelenSil = (id) => {
+    setHata('');
+    del(`/api/fasoncu/gelen-mallar/${id}`).then(yukle).catch((e) => setHata(e.message));
+  };
     post('/api/fasoncu/bildirimler/okundu').then(yukle).catch(() => {});
   };
 
@@ -331,9 +336,14 @@ export function FasonculSayfa({ kullanici, onCikis }) {
                   {g.durum === 'reddedildi' && g.not && (
                     <p className="mt-2 text-sm text-danger">Neden: {g.not}</p>
                   )}
-                  {g.durum === 'onaylandi' && (
-                    <button className="btn btn-sm mt-3" onClick={() => fasonaBasla(g.id)}>Fasona başla</button>
-                  )}
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                    {g.durum === 'onaylandi' && (
+                      <button className="btn btn-sm" onClick={() => fasonaBasla(g.id)}>Fasona başla</button>
+                    )}
+                    {(g.durum === 'bekliyor' || g.durum === 'reddedildi') && (
+                      <ConfirmButton question="Silinsin mi?" onConfirm={() => gelenSil(g.id)} />
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
