@@ -104,12 +104,19 @@ router.post('/api/gorevler', wrap((req, res) => {
 
   const kalemler = (Array.isArray(req.body.kalemler) ? req.body.kalemler : []).map((k) => ({
     tur: k.tur === 'manuel' ? 'manuel' : 'stok',
+    ad: String(k.ad ?? '').trim().slice(0, 120),
     kod: String(k.kod ?? '').trim(),
     renk: String(k.renk ?? '').trim(),
     kaynakDepoId: depoGecerli(k.kaynakDepoId),
     istenen: parseInt(k.istenen, 10),
   }));
   if (!kalemler.length) throw new Error('En az bir mal ekleyin.');
+    // Elle girilen mal yeni ürünse ürün listesine kaydedilir (varsa ad değişmez)
+  kalemler.forEach((k) => {
+    if (k.tur === 'manuel' && k.ad && k.kod) {
+      db.prepare('INSERT INTO urunler (kod, ad) VALUES (?, ?) ON CONFLICT(kod) DO NOTHING').run(k.kod, k.ad);
+    }
+  });
 
   kalemler.forEach((k) => {
     if (!k.kod || !k.renk) throw new Error('Her malda kod ve renk olmalı.');
