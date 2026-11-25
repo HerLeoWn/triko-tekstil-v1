@@ -1,15 +1,20 @@
-import { swatch } from '../renk.js';
 import { tarihYazi } from './tarih.js';
+import { swatch } from '../renk.js';
 
-const FONT = '"Segoe UI", system-ui, Arial, sans-serif';
-const W = 960;
+// Dar tuval: telefonda açılınca küçültülse bile yazılar okunur kalır
+const W = 640;
 const S = 2; // retina için 2x
-const BASLIK_H = 250;
-const SATIR_H = 74;
-const MODEL_BASLIK_H = 88;
-const ALT_H = 140;
+const PAD = 36;
+const HEADER_H = 150;
+const MODEL_HEAD_H = 120;
+const ROW_H = 130;
+const CARD_GAP = 24;
+const FOOT_H = 170;
+const FONT = 'Arial, Helvetica, sans-serif';
+const YAZI = '#111111';
+const SOLUK = '#444444';
 
-const kartH = (n) => MODEL_BASLIK_H + n * SATIR_H + 14;
+const kartH = (n) => MODEL_HEAD_H + n * ROW_H + 20;
 
 // Günün giden kayıtlarını model (kod) ve renk bazında toplar
 export function gunOzeti(rows) {
@@ -35,7 +40,8 @@ export function gunOzeti(rows) {
 
 function gunCanvas(rows, tarih) {
   const { modeller, toplamSeri } = gunOzeti(rows);
-  const H = BASLIK_H + modeller.reduce((s, m) => s + kartH(m.satirlar.length) + 20, 0) + ALT_H;
+  const govde = modeller.reduce((s, m) => s + kartH(m.satirlar.length) + CARD_GAP, 0);
+  const H = HEADER_H + 110 + govde + FOOT_H;
 
   const c = document.createElement('canvas');
   c.width = W * S;
@@ -43,70 +49,72 @@ function gunCanvas(rows, tarih) {
   const x = c.getContext('2d');
   x.scale(S, S);
 
-  const yazi = (t, X, Y, font, renk, hiza = 'left', harf = '0px') => {
-    x.font = `${font} ${FONT}`;
+  const yazi = (t, X, Y, kalinlik, boyut, renk = YAZI, hiza = 'left') => {
+    x.font = `${kalinlik} ${boyut}px ${FONT}`;
     x.fillStyle = renk;
     x.textAlign = hiza;
-    x.letterSpacing = harf;
     x.fillText(t, X, Y);
   };
-  const yuvarla = (X, Y, w, h, r) => {
+  const dikdortgen = (X, Y, w, h, r = 0, dolgu = null, cizgi = null, cizgiKalinlik = 2) => {
     x.beginPath();
     x.roundRect(X, Y, w, h, r);
+    if (dolgu) {
+      x.fillStyle = dolgu;
+      x.fill();
+    }
+    if (cizgi) {
+      x.strokeStyle = cizgi;
+      x.lineWidth = cizgiKalinlik;
+      x.stroke();
+    }
   };
 
-  // Zemin ve ana kart
-  x.fillStyle = '#f7f6f2';
-  x.fillRect(0, 0, W, H);
-  x.save();
-  x.shadowColor = 'rgba(31,30,26,0.10)';
-  x.shadowBlur = 28;
-  x.shadowOffsetY = 10;
-  yuvarla(20, 20, W - 40, H - 40, 26);
+  // Beyaz zemin
   x.fillStyle = '#ffffff';
-  x.fill();
-  x.restore();
-  yuvarla(20.5, 20.5, W - 41, H - 41, 26);
-  x.strokeStyle = '#e7e4da';
-  x.lineWidth = 1;
-  x.stroke();
+  x.fillRect(0, 0, W, H);
 
-  // Başlık
-  yazi('GİDEN MALLAR · GÜN SONU', 72, 80, '700 18px', '#8a877d', 'left', '1.6px');
-  yazi(`Tam ${modeller.length} model yüklendi`, 72, 142, '800 52px', '#1f1e1a');
-  yazi(`${tarihYazi(tarih)} tarihinde bu modeller gitti`, 72, 190, '600 24px', '#3d7a4f');
-  x.fillStyle = '#e7e4da';
-  x.fillRect(72, 216, W - 144, 1.5);
+  // Üst bant
+  x.fillStyle = '#1f4d2e';
+  x.fillRect(0, 0, W, HEADER_H);
+  yazi('GİDEN MALLAR', PAD, 56, 'bold', 26, '#ffffff');
+  yazi(tarihYazi(tarih), PAD, 118, 'bold', 52, '#ffffff');
 
-  // Modeller: her model kendi kartında, renkler satır satır
-  let y = BASLIK_H;
+  // Özet
+  yazi(`${modeller.length} model · ${toplamSeri} seri`, PAD, HEADER_H + 66, 'bold', 40, YAZI);
+
+  // Model kartları
+  let y = HEADER_H + 110;
   modeller.forEach((m) => {
     const h = kartH(m.satirlar.length);
-    yuvarla(72, y, W - 144, h, 22);
-    x.fillStyle = '#fbfaf7';
-    x.fill();
-    yuvarla(72.5, y + 0.5, W - 145, h - 1, 22);
-    x.strokeStyle = '#e7e4da';
-    x.stroke();
+    dikdortgen(PAD, y, W - PAD * 2, h, 18, '#ffffff', '#8c8676', 3);
 
-    yazi(m.kod, 104, y + 56, '800 40px', '#1f1e1a');
-    yazi(`${m.toplam} seri`, W - 104, y + 56, '700 28px', '#1f1e1a', 'right');
+    // Model başlığı: kod büyük
+    x.fillStyle = '#f1efe8';
+    x.fillRect(PAD + 2, y + 2, W - PAD * 2 - 4, MODEL_HEAD_H - 2);
+    yazi(m.kod, PAD + 28, y + 80, 'bold', 76, YAZI);
+    yazi(`${m.toplam} seri`, W - PAD - 28, y + 80, 'bold', 52, YAZI, 'right');
 
+    // Renk satırları
     m.satirlar.forEach((s, i) => {
-      const ry = y + MODEL_BASLIK_H + i * SATIR_H;
-      yuvarla(96, ry, W - 192, SATIR_H - 12, 14);
-      x.fillStyle = s.bg;
-      x.fill();
-      yazi(s.renk, 122, ry + 41, '700 26px', s.fg);
-      yazi(`${s.seri} seri`, W - 122, ry + 41, '700 26px', s.fg, 'right');
+      const ry = y + MODEL_HEAD_H + i * ROW_H;
+      if (i > 0) {
+        x.fillStyle = '#d6d2c4';
+        x.fillRect(PAD + 20, ry, W - PAD * 2 - 40, 2);
+      }
+      dikdortgen(PAD + 28, ry + 34, 60, 60, 10, s.bg, '#8c8676', 2);
+      yazi(s.renk, PAD + 104, ry + 84, 'bold', 52, YAZI);
+      yazi(`${s.seri} seri`, W - PAD - 28, ry + 84, 'bold', 52, YAZI, 'right');
     });
 
-    y += h + 20;
+    y += h + CARD_GAP;
   });
 
   // Alt bilgi
-  yazi(`Toplam ${toplamSeri} seri`, 72, y + 52, '800 32px', '#1f1e1a');
-  yazi('BA Tekstil · Triko Çuval Takibi', W - 72, y + 52, '500 18px', '#8a877d', 'right');
+  x.fillStyle = '#d6d2c4';
+  x.fillRect(PAD, y + 4, W - PAD * 2, 3);
+  yazi('TOPLAM', PAD, y + 70, 'bold', 30, SOLUK);
+  yazi(`${toplamSeri} seri`, W - PAD, y + 84, 'bold', 64, YAZI, 'right');
+  yazi('BA Tekstil · Triko Çuval Takibi', PAD, y + 130, 'normal', 22, SOLUK);
 
   return c;
 }
