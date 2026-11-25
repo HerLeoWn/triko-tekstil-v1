@@ -4,7 +4,7 @@ import { swatch } from '../renk.js';
 const W = 640;
 const S = 2; // retina için 2x
 const PAD = 32;
-const HEADER_H = 150;
+const HEADER_H = 200;
 const MODEL_HEAD_H = 110;
 const ROW_H = 76;
 const CARD_GAP = 20;
@@ -80,12 +80,12 @@ function gunCanvas(rows, tarih) {
   x.fillStyle = ZEMIN;
   x.fillRect(0, 0, W, H);
 
-  // Üst bant: sade koyu yeşil
+  // Üst bant: sade koyu yeşil, yazılar birbirine değmeden dizilmiş
   x.fillStyle = BASLIK;
   x.fillRect(0, 0, W, HEADER_H);
-  yazi('GİDEN MALLAR', PAD + 8, 56, 'normal', 22, '#c9dccf');
-  yazi(tarihYazi(tarih), PAD + 8, 118, 'bold', 52, '#ffffff');
-  yazi(`${modeller.length} model · ${toplamSeri} seri`, PAD + 8, 84 + 40, 'normal', 22, '#c9dccf');
+  yazi('GİDEN MALLAR', PAD + 8, 60, 'normal', 22, '#c9dccf');
+  yazi(tarihYazi(tarih), PAD + 8, 124, 'bold', 52, '#ffffff');
+  yazi(`${modeller.length} model · ${toplamSeri} seri`, PAD + 8, 172, 'normal', 22, '#c9dccf');
 
   // Model kartları
   let y = HEADER_H + 30;
