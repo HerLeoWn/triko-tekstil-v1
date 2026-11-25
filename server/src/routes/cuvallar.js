@@ -145,4 +145,14 @@ router.post('/api/cuvallar/toplu-duzelt', wrap((req, res) => {
   res.json({ ok: true });
 }));
 
+// Tek çuvalı siler. Giden (sevk) geçmişine dokunmaz.
+router.delete('/api/cuvallar/:id', wrap((req, res) => {
+  const c = db.prepare('SELECT * FROM cuvallar WHERE id = ?').get(req.params.id);
+  if (!c) throw new Error('Çuval bulunamadı.');
+  db.prepare('DELETE FROM cuvallar WHERE id = ?').run(c.id);
+  logH('çuval silindi', c.kod, c.renk, 'tek çuval silindi');
+  res.json({ ok: true });
+}));
+
+
 export default router;

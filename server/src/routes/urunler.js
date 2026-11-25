@@ -41,12 +41,12 @@ router.put('/api/urun/:kod', wrap((req, res) => {
 }));
 
 // Ürün grubunun tüm çuvallarını ve giden kayıtlarını siler
+// Grup silme: yalnızca çuvalları siler. Giden (sevk) geçmişi korunur.
 router.delete('/api/urun/:kod', wrap((req, res) => {
   const kod = req.params.kod;
   db.transaction(() => {
     const c = db.prepare('DELETE FROM cuvallar WHERE kod = ? COLLATE NOCASE').run(kod).changes;
-    const g = db.prepare('DELETE FROM giden WHERE kod = ? COLLATE NOCASE').run(kod).changes;
-    logH('grup silindi', kod, '', `${c} çuval, ${g} giden kaydı silindi`);
+    logH('grup silindi', kod, '', `${c} çuval silindi (giden geçmişi korundu)`);
   })();
   res.json({ ok: true });
 }));
