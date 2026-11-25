@@ -23,49 +23,58 @@ router.get('/api/giden', wrap((req, res) => {
 }));
 
 // Yeni giden kaydı(satırları) ekle, seçilen depodan stok düş, muhasebeye bildirim düş
+// Giden kaydı: bir kaydetme işlemi = bir nakliyat. Birden fazla model tek seferde girilebilir.
 router.post('/api/giden', wrap((req, res) => {
-  const kod = String(req.body.kod ?? '').trim();
-  const depoId = depoGecerli(req.body.depoId);
-  const satirlar = (req.body.satirlar || []).map((s) => ({
-    renk: String(s.renk ?? '').trim(),
-    seri: parseInt(s.seri, 10),
-    stok: s.stok !== false,
-  }));
-  if (!kod) throw new Error('Kod zorunlu.');
-  if (!satirlar.length || satirlar.some((s) => !s.renk || !(s.seri > 0))) {
-    throw new Error('Her satırda renk ve seri sayısı olmalı.');
-  }
+  const ham = Array.isArray(req.body.gruplar) && req.body.gruplar.length
+    ? req.body.gruplar
+    : [{ kod: req.body.kod, depoId: req.body.depoId, satirlar: req.body.satirlar }];
+
+  const gruplar = ham.map((g) => {
+    const kod = String(g.kod ?? '').trim();
+    const depoId = depoGecerli(g.depoId);
+    const satirlar = (g.satirlar || []).map((s) => ({
+      renk: String(s.renk ?? '').trim(),
+      seri: parseInt(s.seri, 10),
+      stok: s.stok !== false,
+    }));
+    if (!kod) throw new Error('Kod zorunlu.');
+    if (!satirlar.length || satirlar.some((s) => !s.renk || !(s.seri > 0))) {
+      throw new Error(`${kod}: her satırda renk ve seri sayısı olmalı.`);
+    }
+    return { kod, depoId, satirlar };
+  });
 
   db.transaction(() => {
-    const stok = stokSeriByRenk(kod, depoId);
-    const ihtiyac = {};
-    satirlar.filter((s) => s.stok).forEach((s) => {
-      const k = s.renk.toLowerCase();
-      ihtiyac[k] = (ihtiyac[k] || 0) + s.seri;
-    });
-    for (const [k, adet] of Object.entries(ihtiyac)) {
-      if (adet > (stok[k] || 0)) {
-        throw new Error(`${k} renginde ${depoAd(depoId)} deposunda yalnızca ${stok[k] || 0} seri var, ${adet} istendi.`);
-      }
-    }
-
+    // Aynı kaydetmedeki tüm satırlar aynı zamanı taşır, fiş bu zamana göre gruplanır
     const t = now();
     const ins = db.prepare(`INSERT INTO giden (id, kod, renk, cuval_adedi, seri, tarih, cuval_ici, stok, depo_id)
                             VALUES (?,?,?,?,?,?,?,?,?)`);
-    satirlar.forEach((s) => {
-      let cuvalAdet = 0, cuvalIci = 0;
-      if (s.stok) {
-        const sonuc = renktenDus(kod, s.renk, s.seri, depoId);
-        cuvalAdet = sonuc.cuvalSayisi;
-        cuvalIci = sonuc.cuvalIci ?? 0;
+    gruplar.forEach(({ kod, depoId, satirlar }) => {
+      const stok = stokSeriByRenk(kod, depoId);
+      const ihtiyac = {};
+      satirlar.filter((s) => s.stok).forEach((s) => {
+        const k = s.renk.toLowerCase();
+        ihtiyac[k] = (ihtiyac[k] || 0) + s.seri;
+      });
+      for (const [k, adet] of Object.entries(ihtiyac)) {
+        if (adet > (stok[k] || 0)) {
+          throw new Error(`${kod} · ${k}: ${depoAd(depoId)} deposunda yalnızca ${stok[k] || 0} seri var, ${adet} istendi.`);
+        }
       }
-      ins.run(uid(), kod, s.renk, cuvalAdet, s.seri, t, cuvalIci, s.stok ? 1 : 0, depoId);
-      logH('gitti', kod, s.renk, `${depoAd(depoId)}: ${s.seri} seri${s.stok ? '' : ' (manuel)'}`);
+      satirlar.forEach((s) => {
+        let cuvalAdet = 0, cuvalIci = 0;
+        if (s.stok) {
+          const sonuc = renktenDus(kod, s.renk, s.seri, depoId);
+          cuvalAdet = sonuc.cuvalSayisi;
+          cuvalIci = sonuc.cuvalIci ?? 0;
+        }
+        ins.run(uid(), kod, s.renk, cuvalAdet, s.seri, t, cuvalIci, s.stok ? 1 : 0, depoId);
+        logH('gitti', kod, s.renk, `${depoAd(depoId)}: ${s.seri} seri${s.stok ? '' : ' (manuel)'}`);
+      });
     });
   })();
 
-  gidenBildirimi({ gonderen: req.kullanici, kod, depo: depoAd(depoId), satirlar });
-  res.status(201).json({ ok: true });
+  res.json({ ok: true });
 }));
 
 // Giden kaydını sil: stoktan düşen çuvallar geri eklenir

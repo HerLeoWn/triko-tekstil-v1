@@ -1,20 +1,19 @@
 import { Empty } from '../ui/Empty.jsx';
 import { GidenTablo } from './GidenTablo.jsx';
 import { gunOzeti, gunPngIndir } from '../../lib/gunFis.js';
-import { gunAnahtari, tarihYazi } from '../../lib/tarih.js';
+import { saatYazi, tarihYazi } from '../../lib/tarih.js';
 
-// Giden mallar: önce günlük PNG çıktıları, sonra çıkış deposuna göre tablolar
+// Giden mallar: her nakliyat (kaydetme) ayrı fiş, sonra çıkış deposuna göre tablolar
 export function GidenListe({ rows, onDelete, onEdit }) {
   if (!rows.length) return <Empty text={'Henüz giden mal yok. "+ Giden mal" ile kayıt girin.'} />;
 
-  // Günlere göre (tüm depolar birlikte): PNG o günün tamamını içerir
-  const gunMap = new Map();
+  // Nakliyat: aynı kaydetmede girilen satırlar aynı zamanı taşır
+  const nakMap = new Map();
   rows.forEach((g) => {
-    const key = gunAnahtari(g.tarih);
-    if (!gunMap.has(key)) gunMap.set(key, { key, tarih: g.tarih, rows: [] });
-    gunMap.get(key).rows.push(g);
+    if (!nakMap.has(g.tarih)) nakMap.set(g.tarih, { tarih: g.tarih, rows: [] });
+    nakMap.get(g.tarih).rows.push(g);
   });
-  const gunler = [...gunMap.values()].sort((a, b) => (a.key < b.key ? 1 : -1));
+  const nakliyatlar = [...nakMap.values()].sort((a, b) => (a.tarih < b.tarih ? 1 : -1));
 
   // Çıkış deposuna göre gruplar
   const depoGruplari = [];
@@ -30,20 +29,29 @@ export function GidenListe({ rows, onDelete, onEdit }) {
 
   return (
     <div className="space-y-3">
-      <div className="card p-4">
-        <div className="mb-3 text-[11px] font-medium uppercase tracking-wide text-muted">Günlük çıktılar (PNG)</div>
-        <div className="space-y-2">
-          {gunler.map((g) => {
-            const o = gunOzeti(g.rows);
+      <div className="card p-4 sm:p-5">
+        <div className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted">Nakliyat fişleri (PNG)</div>
+        <div className="space-y-3">
+          {nakliyatlar.map((n) => {
+            const o = gunOzeti(n.rows);
+            const saat = saatYazi(n.tarih);
             return (
-              <div key={g.key} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line p-3">
-                <div>
-                  <div className="font-semibold">{tarihYazi(g.tarih)}</div>
-                  <div className="text-xs text-muted">
-                    {o.modeller.map((m) => m.kod).join(', ')} · {o.toplamSeri} seri
-                  </div>
+              <div key={n.tarih} className="rounded-2xl border-2 border-line bg-white p-4 sm:p-5">
+                <div className="text-2xl font-bold tabular-nums sm:text-3xl">
+                  {tarihYazi(n.tarih)} <span className="text-muted">· {saat}</span>
                 </div>
-                <button className="btn-ghost btn-sm" onClick={() => gunPngIndir(g.rows, g.tarih)}>PNG indir</button>
+                <div className="mt-2 text-lg font-semibold leading-relaxed sm:text-xl">
+                  {o.modeller.map((m) => m.kod).join(' · ')}
+                </div>
+                <div className="mt-1 text-lg tabular-nums text-muted sm:text-xl">
+                  Toplam {o.toplamSeri} seri
+                </div>
+                <button
+                  className="btn mt-4 w-full text-lg sm:w-auto sm:px-8"
+                  onClick={() => gunPngIndir(n.rows, n.tarih, saat)}
+                >
+                  PNG olarak indir
+                </button>
               </div>
             );
           })}

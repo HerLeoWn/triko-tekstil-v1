@@ -40,7 +40,7 @@ export function gunOzeti(rows) {
   return { modeller: liste, toplamSeri: liste.reduce((s, m) => s + m.toplam, 0) };
 }
 
-function gunCanvas(rows, tarih) {
+function gunCanvas(rows, tarih, saat = '') {
   const { modeller, toplamSeri } = gunOzeti(rows);
   const govde = modeller.reduce((s, m) => s + kartH(m.satirlar.length) + CARD_GAP, 0);
   const H = HEADER_H + 30 + govde + FOOT_H;
@@ -84,7 +84,7 @@ function gunCanvas(rows, tarih) {
   x.fillStyle = BASLIK;
   x.fillRect(0, 0, W, HEADER_H);
   yazi('GİDEN MALLAR', PAD + 8, 60, 'normal', 22, '#c9dccf');
-  yazi(tarihYazi(tarih), PAD + 8, 124, 'bold', 52, '#ffffff');
+  yazi(`${tarihYazi(tarih)}${saat ? `  ·  ${saat}` : ''}`, PAD + 8, 124, 'bold', 52, '#ffffff');
   yazi(`${modeller.length} model · ${toplamSeri} seri`, PAD + 8, 172, 'normal', 22, '#c9dccf');
 
   // Model kartları
@@ -129,12 +129,13 @@ function gunCanvas(rows, tarih) {
 }
 
 // Günün tüm giden malları tek PNG olarak indirilir. Dosya adı: 25.11.2026.png
-export function gunPngIndir(rows, gunTarih) {
+// Bir nakliyatın fişi PNG olarak indirilir. Dosya adı: 25.11.2026 09.40.png
+export function gunPngIndir(rows, gunTarih, saat = '') {
   if (!rows.length) return;
-  gunCanvas(rows, gunTarih).toBlob((blob) => {
+  gunCanvas(rows, gunTarih, saat).toBlob((blob) => {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `${tarihYazi(gunTarih)}.png`;
+    a.download = `${tarihYazi(gunTarih)}${saat ? ` ${saat.replace(':', '.')}` : ''}.png`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }, 'image/png');
