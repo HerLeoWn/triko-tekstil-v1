@@ -30,20 +30,26 @@ export function GidenListe({ rows, onDelete, onEdit }) {
 
   return (
     <div className="space-y-3">
-      <div className="card p-4">
-        <div className="mb-3 text-[11px] font-medium uppercase tracking-wide text-muted">Günlük çıktılar (PNG)</div>
-        <div className="space-y-2">
+      <div className="card p-4 sm:p-5">
+        <div className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted">Günlük çıktılar (PNG)</div>
+        <div className="space-y-3">
           {gunler.map((g) => {
             const o = gunOzeti(g.rows);
             return (
-              <div key={g.key} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line p-3">
-                <div>
-                  <div className="font-semibold">{tarihYazi(g.tarih)}</div>
-                  <div className="text-xs text-muted">
-                    {o.modeller.map((m) => m.kod).join(', ')} · {o.toplamSeri} seri
-                  </div>
+              <div key={g.key} className="rounded-2xl border-2 border-line bg-white p-4 sm:p-5">
+                <div className="text-2xl font-bold tabular-nums sm:text-3xl">{tarihYazi(g.tarih)}</div>
+                <div className="mt-2 text-lg font-semibold leading-relaxed sm:text-xl">
+                  {o.modeller.map((m) => m.kod).join(' · ')}
                 </div>
-                <button className="btn-ghost btn-sm" onClick={() => gunPngIndir(g.rows, g.tarih)}>PNG indir</button>
+                <div className="mt-1 text-lg tabular-nums text-muted sm:text-xl">
+                  Toplam {o.toplamSeri} seri
+                </div>
+                <button
+                  className="btn mt-4 w-full text-lg sm:w-auto sm:px-8"
+                  onClick={() => gunPngIndir(g.rows, g.tarih)}
+                >
+                  PNG olarak indir
+                </button>
               </div>
             );
           })}
