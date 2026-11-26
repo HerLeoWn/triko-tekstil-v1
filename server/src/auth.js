@@ -1,6 +1,6 @@
 // Fasoncu: kalemli gelen mal bildirimi, depo sorumlusu onayı, rotasyonlar, bildirimler, canlı konum ve depo hareketleri
 import express from 'express';
-import { db } from '../db.js';
+import { db } from './db.js';
 import './mesajlar.js'; // mesajlar tablosu hazır olsun
 import { uid, now, wrap, logH, depoGecerli, depoAd } from '../lib/yardimcilar.js';
 import { stokSeriByRenk, renktenDus, geriEkle } from '../services/stokkesim.js';
