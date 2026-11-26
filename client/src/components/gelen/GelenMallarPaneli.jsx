@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { get, post, put } from '../../lib/istek.js';
 import { osrmRota, sureYazi } from '../../lib/rota.js';
 import { Empty } from '../ui/Empty.jsx';
@@ -11,6 +11,8 @@ const DURUM = {
   reddedildi: ['Reddedildi', 'bg-warn-soft text-danger'],
 };
 const BAYAT_MS = 3 * 60 * 1000;
+const YAKLASMA_SN = 10 * 60; // 10 dakika altında uyarı verilir
+const UZAKLASMA_SN = 20 * 60; // 20 dakikanın üstüne çıkınca uyarı tekrar hazır olur
 
 const saatYazi = (iso) => (iso ? new Date(iso).toLocaleString('tr-TR', {
   timeZone: 'Europe/Istanbul', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
@@ -18,13 +20,15 @@ const saatYazi = (iso) => (iso ? new Date(iso).toLocaleString('tr-TR', {
 
 const yuvarla = (n) => (n == null ? null : Math.round(n * 1000) / 1000);
 
-// Gelen mallar: depo sorumlusu onaylar, fasoncunun depoya tahmini süresini metin olarak görür
+// Gelen mallar: depo sorumlusu onaylar, fasoncunun depoya tahmini süresini ve yaklaşma uyarısını görür
 export function GelenMallarPaneli({ yonetici = false }) {
   const [liste, setListe] = useState([]);
   const [fasoncu, setFasoncu] = useState(null);
   const [depo, setDepo] = useState(null);
   const [rota, setRota] = useState(null);
+  const [yaklasiyor, setYaklasiyor] = useState(false);
   const [hata, setHata] = useState('');
+  const uyarildi = useRef(false);
 
   const yukle = () => {
     get('/api/gelen-mallar').then(setListe).catch(() => {});
@@ -54,6 +58,21 @@ export function GelenMallarPaneli({ yonetici = false }) {
       .catch(() => { if (!iptal) setRota(null); });
     return () => { iptal = true; };
   }, [fLat, fLng, dLat, dLng]);
+
+  // Fasoncu depoya yaklaşınca bir kez uyarı verilir, uzaklaşınca uyarı tekrar hazır olur
+  useEffect(() => {
+    if (!rota) return;
+    if (rota.sureSn > UZAKLASMA_SN) {
+      uyarildi.current = false;
+      setYaklasiyor(false);
+      return;
+    }
+    if (rota.sureSn <= YAKLASMA_SN && !uyarildi.current) {
+      uyarildi.current = true;
+      setYaklasiyor(true);
+      try { navigator.vibrate?.([300, 150, 300]); } catch { /* titreşim desteklenmiyor */ }
+    }
+  }, [rota]);
 
   const islem = async (fn) => {
     setHata('');
@@ -113,6 +132,13 @@ export function GelenMallarPaneli({ yonetici = false }) {
           )}
           {depo && fasoncu && !rota && <span className="text-muted">Süre hesaplanıyor…</span>}
         </div>
+
+        {yaklasiyor && fasoncu && rota && (
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-accent-soft p-3 text-sm text-accent">
+            <span><b>{fasoncu.ad}</b> depoya yaklaşıyor ({sureYazi(rota.sureSn)} kaldı)</span>
+            <button className="btn-ghost btn-sm" onClick={() => setYaklasiyor(false)}>Tamam</button>
+          </div>
+        )}
 
         {hata && <p className="mt-2 text-sm text-warn">⚠ {hata}</p>}
       </div>

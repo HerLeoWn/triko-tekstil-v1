@@ -1,16 +1,17 @@
 import { useState } from 'react';
-import { ConfirmButton } from '../../Confirm.jsx';
 import { swatch } from '../../renk.js';
 import { fmt } from '../../lib/format.js';
 import { api } from '../../api.js';
 import { Cards } from '../ui/Cards.jsx';
 import { Empty } from '../ui/Empty.jsx';
+import { TipleOnayla } from '../ui/TipleOnayla.jsx';
 
 // Bitenler: stoğu sıfırlanan renkler, ürün grubuna göre. Her rengin sevk kayıtları düzenlenebilir.
 export function BitenListe({ groups, onDeleteGroup, onEdit }) {
   const [acikAnahtar, setAcikAnahtar] = useState(null); // "kod|renk"
   const [sevkler, setSevkler] = useState({});           // { "kod|renk": [sevk kayıtları] }
   const [hata, setHata] = useState('');
+  const [silinecek, setSilinecek] = useState(null);
 
   if (!groups.length) return <Empty text="Bitmiş ürün yok. Stoğu sıfırlanan renkler burada görünür." />;
   const items = groups.flatMap((g) => g.items);
@@ -93,14 +94,22 @@ export function BitenListe({ groups, onDeleteGroup, onEdit }) {
             })}
           </div>
           <div className="mt-3 text-right">
-            <ConfirmButton
-              label="Bu ürün grubunu komple sil"
-              question="Grup ve tüm kayıtları silinsin mi?"
-              onConfirm={() => onDeleteGroup(g.kod)}
-            />
+            <button className="btn-ghost btn-sm text-danger" onClick={() => setSilinecek(g)}>
+              Bu ürün grubunu komple sil
+            </button>
           </div>
         </details>
       ))}
+
+      {silinecek && (
+        <TipleOnayla
+          baslik="Ürün grubu silinsin mi?"
+          metin={`${silinecek.kod} ürün grubunun ${silinecek.items.length} biten renk kaydı ve çuval kayıtları silinecek.\nSevk geçmişi (giden mallar) korunur.`}
+          beklenen={silinecek.kod}
+          onOnay={() => { onDeleteGroup(silinecek.kod); setSilinecek(null); }}
+          onIptal={() => setSilinecek(null)}
+        />
+      )}
     </>
   );
 }

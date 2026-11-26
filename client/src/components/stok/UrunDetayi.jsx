@@ -1,10 +1,13 @@
-import { ConfirmButton } from '../../Confirm.jsx';
+import { useState } from 'react';
 import { swatch } from '../../renk.js';
 import { Bar } from '../ui/Bar.jsx';
+import { TipleOnayla } from '../ui/TipleOnayla.jsx';
 import { DepoChips } from './DepoChips.jsx';
 
-// Ürün grubu ayrıntıları: her renk, seri ve depo dağılımı, grubu silme butonu
+// Ürün grubu ayrıntıları: her renk, seri ve depo dağılımı, grubu silme (kod yazılarak onaylanır)
 export function UrunDetayi({ groups, depolar, onDeleteGroup }) {
+  const [silinecek, setSilinecek] = useState(null);
+
   return (
     <>
       <h4 className="mb-2 text-sm font-semibold">Ürün detayı</h4>
@@ -42,15 +45,23 @@ export function UrunDetayi({ groups, depolar, onDeleteGroup }) {
             </div>
 
             <div className="mt-3 text-right">
-              <ConfirmButton
-                label="Bu ürün grubunu komple sil"
-                question="Grup ve tüm kayıtları silinsin mi?"
-                onConfirm={() => onDeleteGroup(g.kod)}
-              />
+              <button className="btn-ghost btn-sm text-danger" onClick={() => setSilinecek(g)}>
+                Bu ürün grubunu komple sil
+              </button>
             </div>
           </details>
         );
       })}
+
+      {silinecek && (
+        <TipleOnayla
+          baslik="Ürün grubu silinsin mi?"
+          metin={`${silinecek.kod} ürününün ${silinecek.cuval} çuvalı ve ${silinecek.seri} seri stoku silinecek.\nSevk geçmişi (giden mallar) korunur.`}
+          beklenen={silinecek.kod}
+          onOnay={() => { onDeleteGroup(silinecek.kod); setSilinecek(null); }}
+          onIptal={() => setSilinecek(null)}
+        />
+      )}
     </>
   );
 }
