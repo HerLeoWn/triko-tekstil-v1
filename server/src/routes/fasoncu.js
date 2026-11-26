@@ -1,4 +1,4 @@
-// Fasoncu: kalemli gelen mal bildirimi, muhasebe onayı, rotasyonlar, bildirimler ve canlı konum
+// Fasoncu: kalemli gelen mal bildirimi, depo sorumlusu onayı, rotasyonlar, bildirimler, canlı konum ve depo hareketleri
 import express from 'express';
 import { db } from '../db.js';
 import './mesajlar.js'; // mesajlar tablosu hazır olsun
@@ -49,12 +49,6 @@ db.exec(`
   );
 `);
 
-// Artık kullanılmayan roller (çalışan, izleyici) kaldırıldı. Bu roldeki hesaplar silinir.
-try {
-  db.prepare("DELETE FROM users WHERE rol NOT IN ('yonetici','muhasebe','fasoncu')").run();
-} catch (e) {
-  console.error('Eski roller temizlenemedi:', e.message);
-}
 db.exec(`
   CREATE TABLE IF NOT EXISTS fason_hareket (
     id TEXT PRIMARY KEY,
@@ -72,6 +66,13 @@ db.exec(`
     onay_tarih TEXT
   );
 `);
+
+// Artık kullanılmayan roller (çalışan, izleyici) kaldırıldı. Bu roldeki hesaplar silinir.
+try {
+  db.prepare("DELETE FROM users WHERE rol NOT IN ('yonetici','muhasebe','fasoncu')").run();
+} catch (e) {
+  console.error('Eski roller temizlenemedi:', e.message);
+}
 
 const router = express.Router();
 let sonKonum = null; // fasoncunun son bildirdiği konum (bellekte)
@@ -96,10 +97,11 @@ const bildirimEkle = (aliciId, metin, tur, refId) => {
     .run(uid(), aliciId, metin, tur, refId ?? null, now());
 };
 
+// Depo sorumlusunun mesaj kutusuna düşen bildirim
 const yoneticiyeMesaj = (icerik, gonderenAd) =>
   db.prepare(`INSERT INTO mesajlar (id, tur, gonderen_id, gonderen_ad, alici_id, alici_rol, ref_gun, icerik, tarih)
               VALUES (?,?,?,?,?,?,?,?,?)`)
-        .run(uid(), 'gelen', null, gonderenAd, null, 'yonetici', null, icerik, now());
+    .run(uid(), 'gelen', null, gonderenAd, null, 'yonetici', null, icerik, now());
 
 function kalemleriDogrula(girdi) {
   if (!Array.isArray(girdi) || girdi.length === 0) throw new Error('En az bir kalem girin.');
@@ -178,6 +180,30 @@ const rotaSatir = (r) => ({
   cikisGun: r.cikis_gun,
 });
 
+// Depo hareketleri için yardımcılar
+const urunAdi = (kod) => db.prepare('SELECT ad FROM urunler WHERE kod = ? COLLATE NOCASE').get(kod)?.ad ?? '';
+
+const hareketSatir = (h) => ({
+  id: h.id,
+  tip: h.tip,
+  durum: h.durum,
+  kod: h.kod,
+  urunAd: urunAdi(h.kod),
+  renk: h.renk,
+  depo: depoAd(h.depo_id),
+  cuval: h.cuval,
+  seri: h.seri,
+  not: h.not_metni ?? '',
+  fasoncuAd: h.fasoncu_ad ?? '',
+  tarih: h.tarih,
+});
+
+const hareketBul = (id) => {
+  const h = db.prepare('SELECT * FROM fason_hareket WHERE id = ?').get(id);
+  if (!h) throw new Error('Kayıt bulunamadı.');
+  return h;
+};
+
 /* ---------- Depo konumu (muhasebenin ETA hesabı için) ---------- */
 
 router.get('/api/konum/depo', wrap((req, res) => res.json(depoKonumu())));
@@ -243,7 +269,7 @@ router.post('/api/fasoncu/gelen-mallar/:id/basla', wrap((req, res) => {
   res.json({ ok: true });
 }));
 
-/* ---------- Muhasebe / depo sorumlusu: gelen mal onayı ---------- */
+/* ---------- Depo sorumlusu: gelen mal onayı ---------- */
 
 router.get('/api/gelen-mallar', wrap((req, res) => {
   res.json(gelenListesi('SELECT * FROM gelen_mal ORDER BY tarih DESC LIMIT 100', []));
@@ -386,29 +412,6 @@ router.delete('/api/fasoncu/gelen-mallar/:id', wrap((req, res) => {
 }));
 
 /* ---------- Depo hareketleri: fasoncu alım/teslim bildirir, depo sorumlusu onaylar ---------- */
-
-const urunAdi = (kod) => db.prepare('SELECT ad FROM urunler WHERE kod = ? COLLATE NOCASE').get(kod)?.ad ?? '';
-
-const hareketSatir = (h) => ({
-  id: h.id,
-  tip: h.tip,
-  durum: h.durum,
-  kod: h.kod,
-  urunAd: urunAdi(h.kod),
-  renk: h.renk,
-  depo: depoAd(h.depo_id),
-  cuval: h.cuval,
-  seri: h.seri,
-  not: h.not_metni ?? '',
-  fasoncuAd: h.fasoncu_ad ?? '',
-  tarih: h.tarih,
-});
-
-const hareketBul = (id) => {
-  const h = db.prepare('SELECT * FROM fason_hareket WHERE id = ?').get(id);
-  if (!h) throw new Error('Kayıt bulunamadı.');
-  return h;
-};
 
 // Fasoncunun depo listesi (form için)
 router.get('/api/fasoncu/depolar', wrap((req, res) => {
