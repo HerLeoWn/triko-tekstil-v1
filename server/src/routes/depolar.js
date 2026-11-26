@@ -25,12 +25,14 @@ router.put('/api/depolar/:id', wrap((req, res) => {
   res.json({ ok: true });
 }));
 
-// Depo silinebilmesi için en az bir depo kalmalı ve içinde çuval olmamalı
+// Depo silinebilmesi için en az bir depo kalmalı, içinde çuval ya da onay bekleyen fason hareketi olmamalı
 router.delete('/api/depolar/:id', wrap((req, res) => {
   const id = Number(req.params.id);
   if (db.prepare('SELECT COUNT(*) AS n FROM depolar').get().n <= 1) throw new Error('En az bir depo kalmalı.');
   const dolu = db.prepare('SELECT COUNT(*) AS n FROM cuvallar WHERE depo_id = ?').get(id).n;
   if (dolu) throw new Error('Bu depoda çuval var. Önce çuvalları başka depoya taşıyın.');
+  const bekleyenHareket = db.prepare("SELECT COUNT(*) AS n FROM fason_hareket WHERE depo_id = ? AND durum = 'bekliyor'").get(id).n;
+  if (bekleyenHareket) throw new Error('Bu depoda onay bekleyen fason hareketi var. Önce onu işleyin.');
   const ad = depoAd(id);
   db.prepare('DELETE FROM depolar WHERE id = ?').run(id);
   logH('depo silindi', '', '', ad);

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { get, post, put, del } from '../../lib/istek.js';
 import { osrmRota, adaAra, mesafeM, sureYazi } from '../../lib/rota.js';
 import { ConfirmButton } from '../../Confirm.jsx';
+import { FasonHareketPaneli } from '../fason/FasonHareketleri.jsx';
 
 const DURAK_YAKIN_M = 150;
 const BOS_KALEM = { urunAd: '', urunKod: '', renk: '', cuval: '', toplamSeri: '' };
@@ -34,7 +35,7 @@ const kalemYazi = (k) =>
 // Konum yaklaşık 100 m hassasiyetle yuvarlanır, böylece her GPS güncellemesinde rota yeniden hesaplanmaz
 const yuvarla = (n) => (n == null ? null : Math.round(n * 1000) / 1000);
 
-// Fasoncu ekranı: gelen mal bildirimi, bildirimler, konum ve tahmini varış, rotasyonlar
+// Fasoncu ekranı: depo hareketi, gelen mal bildirimi, bildirimler, konum ve tahmini varış, rotasyonlar
 export function FasonculSayfa({ kullanici, onCikis }) {
   const [kalemler, setKalemler] = useState([{ ...BOS_KALEM }]);
   const [gelenNot, setGelenNot] = useState({ tur: '', yazi: '' });
@@ -294,6 +295,8 @@ export function FasonculSayfa({ kullanici, onCikis }) {
           </div>
           {konumHata && <p className="mt-2 text-sm text-warn">⚠ {konumHata}</p>}
         </section>
+
+        <FasonHareketPaneli />
 
         <section className="card p-4">
           <h2 className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted">Gelen mal bildir</h2>

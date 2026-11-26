@@ -2,7 +2,8 @@
 import express from 'express';
 import { db } from '../db.js';
 import './mesajlar.js'; // mesajlar tablosu hazır olsun
-import { uid, now, wrap, logH } from '../lib/yardimcilar.js';
+import { uid, now, wrap, logH, depoGecerli, depoAd } from '../lib/yardimcilar.js';
+import { stokSeriByRenk, renktenDus, geriEkle } from '../services/stokkesim.js';
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS ayarlar (anahtar TEXT PRIMARY KEY, deger TEXT);
@@ -54,6 +55,23 @@ try {
 } catch (e) {
   console.error('Eski roller temizlenemedi:', e.message);
 }
+db.exec(`
+  CREATE TABLE IF NOT EXISTS fason_hareket (
+    id TEXT PRIMARY KEY,
+    tip TEXT NOT NULL,
+    durum TEXT NOT NULL DEFAULT 'bekliyor',
+    fasoncu_id TEXT NOT NULL,
+    fasoncu_ad TEXT,
+    kod TEXT NOT NULL,
+    renk TEXT NOT NULL,
+    depo_id INTEGER NOT NULL,
+    cuval INTEGER,
+    seri INTEGER NOT NULL,
+    not_metni TEXT,
+    tarih TEXT NOT NULL,
+    onay_tarih TEXT
+  );
+`);
 
 const router = express.Router();
 let sonKonum = null; // fasoncunun son bildirdiği konum (bellekte)
@@ -364,6 +382,130 @@ router.delete('/api/fasoncu/gelen-mallar/:id', wrap((req, res) => {
     db.prepare('DELETE FROM gelen_mal_kalem WHERE gelen_id = ?').run(b.id);
     db.prepare('DELETE FROM gelen_mal WHERE id = ?').run(b.id);
   })();
+  res.json({ ok: true });
+}));
+
+/* ---------- Depo hareketleri: fasoncu alım/teslim bildirir, depo sorumlusu onaylar ---------- */
+
+const urunAdi = (kod) => db.prepare('SELECT ad FROM urunler WHERE kod = ? COLLATE NOCASE').get(kod)?.ad ?? '';
+
+const hareketSatir = (h) => ({
+  id: h.id,
+  tip: h.tip,
+  durum: h.durum,
+  kod: h.kod,
+  urunAd: urunAdi(h.kod),
+  renk: h.renk,
+  depo: depoAd(h.depo_id),
+  cuval: h.cuval,
+  seri: h.seri,
+  not: h.not_metni ?? '',
+  fasoncuAd: h.fasoncu_ad ?? '',
+  tarih: h.tarih,
+});
+
+const hareketBul = (id) => {
+  const h = db.prepare('SELECT * FROM fason_hareket WHERE id = ?').get(id);
+  if (!h) throw new Error('Kayıt bulunamadı.');
+  return h;
+};
+
+// Fasoncunun depo listesi (form için)
+router.get('/api/fasoncu/depolar', wrap((req, res) => {
+  res.json(db.prepare('SELECT id, ad FROM depolar ORDER BY sira').all());
+}));
+
+// Fasoncu: alım ya da teslim bildirir
+router.post('/api/fasoncu/hareketler', wrap((req, res) => {
+  const tip = req.body.tip === 'teslim' ? 'teslim' : req.body.tip === 'alim' ? 'alim' : null;
+  if (!tip) throw new Error('Hareket tipi seçin: alım ya da teslim.');
+  const kod = String(req.body.kod ?? '').trim();
+  const renk = String(req.body.renk ?? '').trim();
+  const depoId = depoGecerli(req.body.depoId);
+  const cuval = parseInt(req.body.cuval, 10);
+  const seri = parseInt(req.body.seri, 10);
+  const not = String(req.body.not ?? '').trim().slice(0, 200);
+  if (!kod) throw new Error('Ürün kodu zorunlu.');
+  if (!renk) throw new Error('Renk zorunlu.');
+  if (!(cuval > 0)) throw new Error('Çuval sayısı en az 1 olmalı.');
+  if (!(seri > 0)) throw new Error('Seri sayısı en az 1 olmalı.');
+  if (tip === 'alim') {
+    const mevcut = stokSeriByRenk(kod, depoId)[renk.toLowerCase()] || 0;
+    if (seri > mevcut) {
+      throw new Error(`${depoAd(depoId)} deposunda ${renk} için yalnızca ${mevcut} seri var.`);
+    }
+  }
+  const id = uid();
+  db.prepare(`INSERT INTO fason_hareket (id, tip, durum, fasoncu_id, fasoncu_ad, kod, renk, depo_id, cuval, seri, not_metni, tarih)
+              VALUES (?,?,'bekliyor',?,?,?,?,?,?,?,?,?)`)
+    .run(id, tip, req.kullanici.id, req.kullanici.ad, kod, renk, depoId, cuval, seri, not || null, now());
+  yoneticiyeMesaj([
+    tip === 'alim' ? 'Depodan mal alındı (onay bekliyor)' : 'Depoya mal teslim edildi (onay bekliyor)',
+    `Bildiren: ${req.kullanici.ad} · ${depoAd(depoId)}`,
+    `• ${kod} ${renk} · ${cuval} çuval · ${seri} seri`,
+  ].join('\n'), req.kullanici.ad);
+  logH(tip === 'alim' ? 'fason alım bildirildi' : 'fason teslim bildirildi', kod, renk,
+    `${req.kullanici.ad} · ${depoAd(depoId)} · ${seri} seri`);
+  res.status(201).json({ ok: true, id });
+}));
+
+// Fasoncu: kendi bildirimleri (son 50)
+router.get('/api/fasoncu/hareketler', wrap((req, res) => {
+  res.json(db.prepare('SELECT * FROM fason_hareket WHERE fasoncu_id = ? ORDER BY tarih DESC LIMIT 50')
+    .all(req.kullanici.id).map(hareketSatir));
+}));
+
+// Fasoncu: yalnızca henüz işlenmemiş kendi bildirimini silebilir
+router.delete('/api/fasoncu/hareketler/:id', wrap((req, res) => {
+  const h = hareketBul(req.params.id);
+  if (h.fasoncu_id !== req.kullanici.id) throw new Error('Bu kayıt size ait değil.');
+  if (h.durum !== 'bekliyor') throw new Error('Onaylanmış ya da reddedilmiş kayıt silinemez.');
+  db.prepare('DELETE FROM fason_hareket WHERE id = ?').run(h.id);
+  res.json({ ok: true });
+}));
+
+// Depo sorumlusu: bekleyenler üstte, sonra son işlenenler
+router.get('/api/fason-hareketler', wrap((req, res) => {
+  res.json(db.prepare(`SELECT * FROM fason_hareket
+                       ORDER BY CASE WHEN durum = 'bekliyor' THEN 0 ELSE 1 END, tarih DESC LIMIT 100`)
+    .all().map(hareketSatir));
+}));
+
+// Onay: alım stoktan düşer ve giden kaydı oluşur, teslim stoğa geri eklenir
+router.post('/api/fason-hareketler/:id/onay', wrap((req, res) => {
+  const h = hareketBul(req.params.id);
+  if (h.durum !== 'bekliyor') throw new Error('Bu hareket zaten işlendi.');
+  db.transaction(() => {
+    if (h.tip === 'alim') {
+      const mevcut = stokSeriByRenk(h.kod, h.depo_id)[h.renk.toLowerCase()] || 0;
+      if (h.seri > mevcut) {
+        throw new Error(`${depoAd(h.depo_id)} deposunda ${h.renk} için yalnızca ${mevcut} seri var, ${h.seri} onaylanamaz.`);
+      }
+      const sonuc = renktenDus(h.kod, h.renk, h.seri, h.depo_id);
+      db.prepare(`INSERT INTO giden (id, kod, renk, cuval_adedi, seri, tarih, cuval_ici, stok, depo_id)
+                  VALUES (?,?,?,?,?,?,?,1,?)`)
+        .run(uid(), h.kod, h.renk, sonuc.cuvalSayisi, h.seri, now(), sonuc.cuvalIci ?? 0, h.depo_id);
+      logH('fason alım onaylandı', h.kod, h.renk, `${depoAd(h.depo_id)} · ${h.seri} seri · ${h.fasoncu_ad}`);
+    } else {
+      const cuvalIci = Math.ceil(h.seri / h.cuval);
+      geriEkle(h.kod, h.renk, h.seri, cuvalIci, h.depo_id);
+      logH('fason teslim onaylandı', h.kod, h.renk, `${depoAd(h.depo_id)} · ${h.seri} seri · ${h.fasoncu_ad}`);
+    }
+    db.prepare("UPDATE fason_hareket SET durum = 'onaylandi', onay_tarih = ? WHERE id = ?").run(now(), h.id);
+    bildirimEkle(h.fasoncu_id,
+      `${h.tip === 'alim' ? 'Alım' : 'Teslim'} onaylandı: ${h.kod} ${h.renk} · ${h.seri} seri`, 'onay', h.id);
+  })();
+  res.json({ ok: true });
+}));
+
+router.post('/api/fason-hareketler/:id/reddet', wrap((req, res) => {
+  const h = hareketBul(req.params.id);
+  if (h.durum !== 'bekliyor') throw new Error('Bu hareket zaten işlendi.');
+  const not = String(req.body.not ?? '').trim();
+  db.prepare("UPDATE fason_hareket SET durum = 'reddedildi', not_metni = ?, onay_tarih = ? WHERE id = ?")
+    .run(not || null, now(), h.id);
+  bildirimEkle(h.fasoncu_id,
+    `${h.tip === 'alim' ? 'Alım' : 'Teslim'} reddedildi: ${h.kod} ${h.renk}${not ? ` · Neden: ${not}` : ''}`, 'red', h.id);
   res.json({ ok: true });
 }));
 

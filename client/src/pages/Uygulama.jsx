@@ -16,6 +16,7 @@ import { MuhasebeSayfa } from '../components/muhasebe/MuhasebeSayfa.jsx';
 import { GorevPaneli } from '../components/gorev/GorevPaneli.jsx';
 import { FasonculSayfa } from '../components/fasoncu/FasonculSayfa.jsx';
 import { GelenMallarPaneli } from '../components/gelen/GelenMallarPaneli.jsx';
+import { FasonHareketleriYonetici } from '../components/fason/FasonHareketleri.jsx';
 import SekmeIcerik from './SekmeIcerik.jsx';
 
 const ayarOku = (key, varsayilan) => {
@@ -57,6 +58,7 @@ function YoneticiEkrani({ kullanici, onCikis }) {
     ['biten', 'Bitenler'],
     ['uyari', 'Uyarılar'],
     ['gelen', 'Gelen mallar'],
+    ['hareketler', 'Fason hareketleri'],
     ['gorevler', 'Görevler'],
     ['kullanicilar', 'Kullanıcılar'],
   ];
@@ -109,7 +111,9 @@ function YoneticiEkrani({ kullanici, onCikis }) {
               setQ={setQ}
             />
             {tab === 'gelen' ? (
-              <div className="p-4"><GelenMallarPaneli yonetici /></div>
+              <GelenMallarPaneli yonetici />
+            ) : tab === 'hareketler' ? (
+              <FasonHareketleriYonetici />
             ) : tab === 'gorevler' ? (
               <GorevPaneli liste={gorev.liste} yenile={gorev.yenile} />
             ) : (

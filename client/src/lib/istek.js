@@ -1,5 +1,6 @@
 // Tüm fasoncu ve gelen mal ekranlarının kullandığı küçük istek yardımcısı.
 // Sunucu hata dönerse, mesajı (error alanını) Error olarak fırlatır.
+import { get, post, del } from '../../lib/istek.js';
 export async function istek(method, url, body) {
   const r = await fetch(url, {
     method,
@@ -16,4 +17,3 @@ export async function istek(method, url, body) {
 export const get = (url) => istek('GET', url);
 export const post = (url, body) => istek('POST', url, body ?? {});
 export const put = (url, body) => istek('PUT', url, body ?? {});
-export const del = (url) => istek('DELETE', url);
