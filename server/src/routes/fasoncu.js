@@ -49,24 +49,6 @@ db.exec(`
   );
 `);
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS fason_hareket (
-    id TEXT PRIMARY KEY,
-    tip TEXT NOT NULL,
-    durum TEXT NOT NULL DEFAULT 'bekliyor',
-    fasoncu_id TEXT NOT NULL,
-    fasoncu_ad TEXT,
-    kod TEXT NOT NULL,
-    renk TEXT NOT NULL,
-    depo_id INTEGER NOT NULL,
-    cuval INTEGER,
-    seri INTEGER NOT NULL,
-    not_metni TEXT,
-    tarih TEXT NOT NULL,
-    onay_tarih TEXT
-  );
-`);
-
 // Artık kullanılmayan roller (çalışan, izleyici) kaldırıldı. Bu roldeki hesaplar silinir.
 try {
   db.prepare("DELETE FROM users WHERE rol NOT IN ('yonetici','muhasebe','fasoncu')").run();
@@ -179,30 +161,6 @@ const rotaSatir = (r) => ({
   alindiGun: r.alindi_gun,
   cikisGun: r.cikis_gun,
 });
-
-// Depo hareketleri için yardımcılar
-const urunAdi = (kod) => db.prepare('SELECT ad FROM urunler WHERE kod = ? COLLATE NOCASE').get(kod)?.ad ?? '';
-
-const hareketSatir = (h) => ({
-  id: h.id,
-  tip: h.tip,
-  durum: h.durum,
-  kod: h.kod,
-  urunAd: urunAdi(h.kod),
-  renk: h.renk,
-  depo: depoAd(h.depo_id),
-  cuval: h.cuval,
-  seri: h.seri,
-  not: h.not_metni ?? '',
-  fasoncuAd: h.fasoncu_ad ?? '',
-  tarih: h.tarih,
-});
-
-const hareketBul = (id) => {
-  const h = db.prepare('SELECT * FROM fason_hareket WHERE id = ?').get(id);
-  if (!h) throw new Error('Kayıt bulunamadı.');
-  return h;
-};
 
 /* ---------- Depo konumu (muhasebenin ETA hesabı için) ---------- */
 
@@ -411,104 +369,198 @@ router.delete('/api/fasoncu/gelen-mallar/:id', wrap((req, res) => {
   res.json({ ok: true });
 }));
 
-/* ---------- Depo hareketleri: fasoncu alım/teslim bildirir, depo sorumlusu onaylar ---------- */
+/* ---------- Depo hareketleri: fasoncu tek depodan birden fazla kalem bildirir, depo sorumlusu onaylar ---------- */
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS fason_islem (
+    id TEXT PRIMARY KEY,
+    tip TEXT NOT NULL,
+    durum TEXT NOT NULL DEFAULT 'bekliyor',
+    fasoncu_id TEXT NOT NULL,
+    fasoncu_ad TEXT,
+    depo_id INTEGER NOT NULL,
+    not_metni TEXT,
+    tarih TEXT NOT NULL,
+    onay_tarih TEXT
+  );
+  CREATE TABLE IF NOT EXISTS fason_islem_kalem (
+    id TEXT PRIMARY KEY,
+    islem_id TEXT NOT NULL,
+    sira INTEGER NOT NULL,
+    kod TEXT NOT NULL,
+    renk TEXT NOT NULL,
+    cuval INTEGER NOT NULL,
+    seri INTEGER NOT NULL
+  );
+`);
+
+const urunAdi = (kod) => db.prepare('SELECT ad FROM urunler WHERE kod = ? COLLATE NOCASE').get(kod)?.ad ?? '';
+
+const islemKalemleri = (islemId) =>
+  db.prepare('SELECT * FROM fason_islem_kalem WHERE islem_id = ? ORDER BY sira').all(islemId).map((k) => ({
+    id: k.id,
+    kod: k.kod,
+    urunAd: urunAdi(k.kod),
+    renk: k.renk,
+    cuval: k.cuval,
+    seri: k.seri,
+  }));
+
+const islemSatir = (h) => ({
+  id: h.id,
+  tip: h.tip,
+  durum: h.durum,
+  depo: depoAd(h.depo_id),
+  not: h.not_metni ?? '',
+  fasoncuAd: h.fasoncu_ad ?? '',
+  tarih: h.tarih,
+  kalemler: islemKalemleri(h.id),
+});
+
+const islemBul = (id) => {
+  const h = db.prepare('SELECT * FROM fason_islem WHERE id = ?').get(id);
+  if (!h) throw new Error('Kayıt bulunamadı.');
+  return h;
+};
+
+// Aynı kod ve renk birden fazla satırdaysa toplanır (stok kontrolü için)
+const kalemIhtiyaci = (kalemler) => {
+  const map = new Map();
+  kalemler.forEach((k) => {
+    const anahtar = `${k.kod.toLowerCase()}|${k.renk.toLowerCase()}`;
+    const e = map.get(anahtar) ?? { kod: k.kod, renk: k.renk, seri: 0 };
+    e.seri += k.seri;
+    map.set(anahtar, e);
+  });
+  return [...map.values()];
+};
 
 // Fasoncunun depo listesi (form için)
 router.get('/api/fasoncu/depolar', wrap((req, res) => {
   res.json(db.prepare('SELECT id, ad FROM depolar ORDER BY sira').all());
 }));
 
-// Fasoncu: alım ya da teslim bildirir
-router.post('/api/fasoncu/hareketler', wrap((req, res) => {
+// Fasoncu: tek depodan birden fazla kalem içeren alım ya da teslim bildirir
+router.post('/api/fasoncu/islemler', wrap((req, res) => {
   const tip = req.body.tip === 'teslim' ? 'teslim' : req.body.tip === 'alim' ? 'alim' : null;
   if (!tip) throw new Error('Hareket tipi seçin: alım ya da teslim.');
-  const kod = String(req.body.kod ?? '').trim();
-  const renk = String(req.body.renk ?? '').trim();
   const depoId = depoGecerli(req.body.depoId);
-  const cuval = parseInt(req.body.cuval, 10);
-  const seri = parseInt(req.body.seri, 10);
   const not = String(req.body.not ?? '').trim().slice(0, 200);
-  if (!kod) throw new Error('Ürün kodu zorunlu.');
-  if (!renk) throw new Error('Renk zorunlu.');
-  if (!(cuval > 0)) throw new Error('Çuval sayısı en az 1 olmalı.');
-  if (!(seri > 0)) throw new Error('Seri sayısı en az 1 olmalı.');
+  const girdi = Array.isArray(req.body.kalemler) ? req.body.kalemler : [];
+  if (!girdi.length) throw new Error('En az bir kalem girin.');
+  if (girdi.length > 30) throw new Error('Bir bildirimde en fazla 30 kalem olabilir.');
+
+  const kalemler = girdi.map((k, i) => {
+    const no = i + 1;
+    const kod = String(k?.kod ?? '').trim();
+    const renk = String(k?.renk ?? '').trim();
+    const cuval = parseInt(k?.cuval, 10);
+    const seri = parseInt(k?.seri, 10);
+    if (!kod) throw new Error(`${no}. kalemde ürün kodu eksik.`);
+    if (!renk) throw new Error(`${no}. kalemde renk eksik.`);
+    if (!(cuval > 0)) throw new Error(`${no}. kalemde çuval sayısı eksik.`);
+    if (!(seri > 0)) throw new Error(`${no}. kalemde seri sayısı eksik.`);
+    return { kod, renk, cuval, seri };
+  });
+
   if (tip === 'alim') {
-    const mevcut = stokSeriByRenk(kod, depoId)[renk.toLowerCase()] || 0;
-    if (seri > mevcut) {
-      throw new Error(`${depoAd(depoId)} deposunda ${renk} için yalnızca ${mevcut} seri var.`);
-    }
+    kalemIhtiyaci(kalemler).forEach((k) => {
+      const mevcut = stokSeriByRenk(k.kod, depoId)[k.renk.toLowerCase()] || 0;
+      if (k.seri > mevcut) {
+        throw new Error(`${k.kod} ${k.renk}: ${depoAd(depoId)} deposunda yalnızca ${mevcut} seri var, ${k.seri} girdiniz.`);
+      }
+    });
   }
+
   const id = uid();
-  db.prepare(`INSERT INTO fason_hareket (id, tip, durum, fasoncu_id, fasoncu_ad, kod, renk, depo_id, cuval, seri, not_metni, tarih)
-              VALUES (?,?,'bekliyor',?,?,?,?,?,?,?,?,?)`)
-    .run(id, tip, req.kullanici.id, req.kullanici.ad, kod, renk, depoId, cuval, seri, not || null, now());
-  yoneticiyeMesaj([
-    tip === 'alim' ? 'Depodan mal alındı (onay bekliyor)' : 'Depoya mal teslim edildi (onay bekliyor)',
-    `Bildiren: ${req.kullanici.ad} · ${depoAd(depoId)}`,
-    `• ${kod} ${renk} · ${cuval} çuval · ${seri} seri`,
-  ].join('\n'), req.kullanici.ad);
-  logH(tip === 'alim' ? 'fason alım bildirildi' : 'fason teslim bildirildi', kod, renk,
-    `${req.kullanici.ad} · ${depoAd(depoId)} · ${seri} seri`);
+  db.transaction(() => {
+    db.prepare(`INSERT INTO fason_islem (id, tip, durum, fasoncu_id, fasoncu_ad, depo_id, not_metni, tarih)
+                VALUES (?,?,'bekliyor',?,?,?,?,?)`)
+      .run(id, tip, req.kullanici.id, req.kullanici.ad, depoId, not || null, now());
+    const ekle = db.prepare(`INSERT INTO fason_islem_kalem (id, islem_id, sira, kod, renk, cuval, seri)
+                             VALUES (?,?,?,?,?,?,?)`);
+    kalemler.forEach((k, i) => ekle.run(uid(), id, i + 1, k.kod, k.renk, k.cuval, k.seri));
+    yoneticiyeMesaj([
+      tip === 'alim'
+        ? `${depoAd(depoId)} deposundan mal alındı (onay bekliyor)`
+        : `${depoAd(depoId)} deposuna mal teslim edildi (onay bekliyor)`,
+      `Bildiren: ${req.kullanici.ad}`,
+      ...kalemler.map((k) => `• ${k.kod} ${k.renk} · ${k.cuval} çuval · ${k.seri} seri`),
+    ].join('\n'), req.kullanici.ad);
+  })();
+  logH(tip === 'alim' ? 'fason alım bildirildi' : 'fason teslim bildirildi', '', '',
+    `${req.kullanici.ad} · ${depoAd(depoId)} · ${kalemler.length} kalem`);
   res.status(201).json({ ok: true, id });
 }));
 
 // Fasoncu: kendi bildirimleri (son 50)
-router.get('/api/fasoncu/hareketler', wrap((req, res) => {
-  res.json(db.prepare('SELECT * FROM fason_hareket WHERE fasoncu_id = ? ORDER BY tarih DESC LIMIT 50')
-    .all(req.kullanici.id).map(hareketSatir));
+router.get('/api/fasoncu/islemler', wrap((req, res) => {
+  res.json(db.prepare('SELECT * FROM fason_islem WHERE fasoncu_id = ? ORDER BY tarih DESC LIMIT 50')
+    .all(req.kullanici.id).map(islemSatir));
 }));
 
 // Fasoncu: yalnızca henüz işlenmemiş kendi bildirimini silebilir
-router.delete('/api/fasoncu/hareketler/:id', wrap((req, res) => {
-  const h = hareketBul(req.params.id);
+router.delete('/api/fasoncu/islemler/:id', wrap((req, res) => {
+  const h = islemBul(req.params.id);
   if (h.fasoncu_id !== req.kullanici.id) throw new Error('Bu kayıt size ait değil.');
   if (h.durum !== 'bekliyor') throw new Error('Onaylanmış ya da reddedilmiş kayıt silinemez.');
-  db.prepare('DELETE FROM fason_hareket WHERE id = ?').run(h.id);
-  res.json({ ok: true });
-}));
-
-// Depo sorumlusu: bekleyenler üstte, sonra son işlenenler
-router.get('/api/fason-hareketler', wrap((req, res) => {
-  res.json(db.prepare(`SELECT * FROM fason_hareket
-                       ORDER BY CASE WHEN durum = 'bekliyor' THEN 0 ELSE 1 END, tarih DESC LIMIT 100`)
-    .all().map(hareketSatir));
-}));
-
-// Onay: alım stoktan düşer ve giden kaydı oluşur, teslim stoğa geri eklenir
-router.post('/api/fason-hareketler/:id/onay', wrap((req, res) => {
-  const h = hareketBul(req.params.id);
-  if (h.durum !== 'bekliyor') throw new Error('Bu hareket zaten işlendi.');
   db.transaction(() => {
-    if (h.tip === 'alim') {
-      const mevcut = stokSeriByRenk(h.kod, h.depo_id)[h.renk.toLowerCase()] || 0;
-      if (h.seri > mevcut) {
-        throw new Error(`${depoAd(h.depo_id)} deposunda ${h.renk} için yalnızca ${mevcut} seri var, ${h.seri} onaylanamaz.`);
-      }
-      const sonuc = renktenDus(h.kod, h.renk, h.seri, h.depo_id);
-      db.prepare(`INSERT INTO giden (id, kod, renk, cuval_adedi, seri, tarih, cuval_ici, stok, depo_id)
-                  VALUES (?,?,?,?,?,?,?,1,?)`)
-        .run(uid(), h.kod, h.renk, sonuc.cuvalSayisi, h.seri, now(), sonuc.cuvalIci ?? 0, h.depo_id);
-      logH('fason alım onaylandı', h.kod, h.renk, `${depoAd(h.depo_id)} · ${h.seri} seri · ${h.fasoncu_ad}`);
-    } else {
-      const cuvalIci = Math.ceil(h.seri / h.cuval);
-      geriEkle(h.kod, h.renk, h.seri, cuvalIci, h.depo_id);
-      logH('fason teslim onaylandı', h.kod, h.renk, `${depoAd(h.depo_id)} · ${h.seri} seri · ${h.fasoncu_ad}`);
-    }
-    db.prepare("UPDATE fason_hareket SET durum = 'onaylandi', onay_tarih = ? WHERE id = ?").run(now(), h.id);
-    bildirimEkle(h.fasoncu_id,
-      `${h.tip === 'alim' ? 'Alım' : 'Teslim'} onaylandı: ${h.kod} ${h.renk} · ${h.seri} seri`, 'onay', h.id);
+    db.prepare('DELETE FROM fason_islem_kalem WHERE islem_id = ?').run(h.id);
+    db.prepare('DELETE FROM fason_islem WHERE id = ?').run(h.id);
   })();
   res.json({ ok: true });
 }));
 
-router.post('/api/fason-hareketler/:id/reddet', wrap((req, res) => {
-  const h = hareketBul(req.params.id);
+// Depo sorumlusu: bekleyenler üstte, sonra son işlenenler
+router.get('/api/fason-islemler', wrap((req, res) => {
+  res.json(db.prepare(`SELECT * FROM fason_islem
+                       ORDER BY CASE WHEN durum = 'bekliyor' THEN 0 ELSE 1 END, tarih DESC LIMIT 100`)
+    .all().map(islemSatir));
+}));
+
+// Onay: alım kalem kalem stoktan düşer ve giden kayıtları aynı zamanla oluşur (tek fiş),
+// teslim kalem kalem stoğa geri eklenir
+router.post('/api/fason-islemler/:id/onay', wrap((req, res) => {
+  const h = islemBul(req.params.id);
+  if (h.durum !== 'bekliyor') throw new Error('Bu hareket zaten işlendi.');
+  const kalemler = islemKalemleri(h.id);
+  db.transaction(() => {
+    const t = now();
+    if (h.tip === 'alim') {
+      kalemIhtiyaci(kalemler).forEach((k) => {
+        const mevcut = stokSeriByRenk(k.kod, h.depo_id)[k.renk.toLowerCase()] || 0;
+        if (k.seri > mevcut) {
+          throw new Error(`${k.kod} ${k.renk}: yalnızca ${mevcut} seri var, ${k.seri} onaylanamaz.`);
+        }
+      });
+      const ekle = db.prepare(`INSERT INTO giden (id, kod, renk, cuval_adedi, seri, tarih, cuval_ici, stok, depo_id)
+                               VALUES (?,?,?,?,?,?,?,1,?)`);
+      kalemler.forEach((k) => {
+        const sonuc = renktenDus(k.kod, k.renk, k.seri, h.depo_id);
+        ekle.run(uid(), k.kod, k.renk, sonuc.cuvalSayisi, k.seri, t, sonuc.cuvalIci ?? 0, h.depo_id);
+        logH('fason alım onaylandı', k.kod, k.renk, `${depoAd(h.depo_id)} · ${k.seri} seri · ${h.fasoncu_ad}`);
+      });
+    } else {
+      kalemler.forEach((k) => {
+        geriEkle(k.kod, k.renk, k.seri, Math.ceil(k.seri / k.cuval), h.depo_id);
+        logH('fason teslim onaylandı', k.kod, k.renk, `${depoAd(h.depo_id)} · ${k.seri} seri · ${h.fasoncu_ad}`);
+      });
+    }
+    db.prepare("UPDATE fason_islem SET durum = 'onaylandi', onay_tarih = ? WHERE id = ?").run(t, h.id);
+    bildirimEkle(h.fasoncu_id,
+      `${h.tip === 'alim' ? 'Alım' : 'Teslim'} onaylandı (${kalemler.length} kalem, ${depoAd(h.depo_id)})`, 'onay', h.id);
+  })();
+  res.json({ ok: true });
+}));
+
+router.post('/api/fason-islemler/:id/reddet', wrap((req, res) => {
+  const h = islemBul(req.params.id);
   if (h.durum !== 'bekliyor') throw new Error('Bu hareket zaten işlendi.');
   const not = String(req.body.not ?? '').trim();
-  db.prepare("UPDATE fason_hareket SET durum = 'reddedildi', not_metni = ?, onay_tarih = ? WHERE id = ?")
+  db.prepare("UPDATE fason_islem SET durum = 'reddedildi', not_metni = ?, onay_tarih = ? WHERE id = ?")
     .run(not || null, now(), h.id);
   bildirimEkle(h.fasoncu_id,
-    `${h.tip === 'alim' ? 'Alım' : 'Teslim'} reddedildi: ${h.kod} ${h.renk}${not ? ` · Neden: ${not}` : ''}`, 'red', h.id);
+    `${h.tip === 'alim' ? 'Alım' : 'Teslim'} reddedildi (${depoAd(h.depo_id)})${not ? ` · Neden: ${not}` : ''}`, 'red', h.id);
   res.json({ ok: true });
 }));
 

@@ -117,7 +117,7 @@ function izinliRoller(method, path) {
     if (path === '/api/gorevler' || path.endsWith('/iptal')) return ['muhasebe'];
     return ['yonetici'];
   }
-  if (path.startsWith('/api/fason-hareketler')) return ['yonetici'];
+    if (path.startsWith('/api/fason-islemler')) return ['yonetici'];
   if (path.startsWith('/api/konum/depo') && method !== 'GET') return ['yonetici'];
   if (path.startsWith('/api/konum/fasoncu')) return method === 'GET' ? ['yonetici'] : ['fasoncu'];
   if (path.startsWith('/api/gelen-mallar')) return ['yonetici'];
