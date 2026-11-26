@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CuvalForm, GidenForm, GidenEditForm } from '../Forms.jsx';
 import { RaporModal, OzetModal } from '../Faz3.jsx';
 import { MobilAlt } from '../Faz4.jsx';
@@ -8,6 +8,7 @@ import { useTriko } from '../hooks/useTriko.js';
 import { useIslemler } from '../hooks/useIslemler.js';
 import { useMesajlar } from '../hooks/useMesajlar.js';
 import { useGorevler } from '../hooks/useGorevler.js';
+import { get } from '../lib/istek.js';
 import Baslik from '../components/layout/Baslik.jsx';
 import { SekmeMenu } from '../components/layout/SekmeMenu.jsx';
 import YanPanel from '../components/layout/YanPanel.jsx';
@@ -49,20 +50,40 @@ function MuhasebeKapi({ kullanici, onCikis }) {
   );
 }
 
+// Bekleyen fason hareketlerini 10 saniyede bir sayar, yeni gelince titretir
+function useBekleyenHareket() {
+  const [sayi, setSayi] = useState(0);
+  const sonSayi = useRef(0);
+
+  useEffect(() => {
+    let iptal = false;
+    const cek = async () => {
+      try {
+        const satirlar = await get('/api/fason-islemler');
+        if (iptal || !Array.isArray(satirlar)) return;
+        const n = satirlar.filter((s) => s.durum === 'bekliyor').length;
+        if (n > sonSayi.current) {
+          try { navigator.vibrate?.(300); } catch { /* desteklenmiyor */ }
+        }
+        sonSayi.current = n;
+        setSayi(n);
+      } catch {
+        // ağ hatasında sayı olduğu gibi kalır
+      }
+    };
+    cek();
+    const t = setInterval(cek, 10000);
+    return () => {
+      iptal = true;
+      clearInterval(t);
+    };
+  }, []);
+
+  return sayi;
+}
+
 // Depo sorumlusunun ana ekranı
 function YoneticiEkrani({ kullanici, onCikis }) {
-  const TABS = [
-    ['stok', 'Stok özeti'],
-    ['cuval', 'Çuvallar'],
-    ['giden', 'Giden mallar'],
-    ['biten', 'Bitenler'],
-    ['uyari', 'Uyarılar'],
-    ['gelen', 'Gelen mallar'],
-    ['hareketler', 'Fason hareketleri'],
-    ['gorevler', 'Görevler'],
-    ['kullanicilar', 'Kullanıcılar'],
-  ];
-
   const [tab, setTab] = useState('stok');
   const [q, setQ] = useState('');
   const [cuvalDurum] = useState('');
@@ -73,6 +94,20 @@ function YoneticiEkrani({ kullanici, onCikis }) {
   const [mesajAcik, setMesajAcik] = useState(false);
   const [form, setForm] = useState(null);
   const [urunDuz, setUrunDuz] = useState(null);
+
+  const bekleyenHareket = useBekleyenHareket();
+
+  const TABS = [
+    ['stok', 'Stok özeti'],
+    ['cuval', 'Çuvallar'],
+    ['giden', 'Giden mallar'],
+    ['biten', 'Bitenler'],
+    ['uyari', 'Uyarılar'],
+    ['gelen', 'Gelen mallar'],
+    ['hareketler', bekleyenHareket > 0 ? `Fason hareketleri (${bekleyenHareket})` : 'Fason hareketleri'],
+    ['gorevler', 'Görevler'],
+    ['kullanicilar', 'Kullanıcılar'],
+  ];
 
   useEffect(() => { localStorage.setItem('triko-esik', esik); }, [esik]);
   useEffect(() => { localStorage.setItem('triko-gun', gun); }, [gun]);
@@ -99,6 +134,17 @@ function YoneticiEkrani({ kullanici, onCikis }) {
           onYeniGiden={() => setForm({ type: 'giden' })}
           onCikis={onCikis}
         />
+
+        {bekleyenHareket > 0 && tab !== 'hareketler' && (
+          <button
+            type="button"
+            onClick={() => setTab('hareketler')}
+            className="mx-auto mt-4 flex w-[calc(100%-2rem)] max-w-6xl items-center justify-between rounded-xl bg-warn-soft px-4 py-3 text-left text-warn sm:w-[calc(100%-3rem)]"
+          >
+            <span className="font-medium">{bekleyenHareket} fason hareketi onay bekliyor</span>
+            <span className="text-sm underline">Aç</span>
+          </button>
+        )}
 
         <main className="mx-auto grid max-w-6xl gap-4 p-4 sm:p-6 lg:grid-cols-[1fr_300px]">
           <section className="card relative z-10 min-w-0">
