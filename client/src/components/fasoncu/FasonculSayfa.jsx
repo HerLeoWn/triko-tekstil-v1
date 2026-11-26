@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { get, post, put, del } from '../../lib/istek.js';
 import { osrmRota, adaAra, mesafeM, sureYazi } from '../../lib/rota.js';
 import { ConfirmButton } from '../../Confirm.jsx';
-import { FasonHareketPaneli } from '../fason/FasonHareketleri.jsx';
+import { FasonHareketPaneli } from './FasonHareketleri.jsx';
 
 const DURAK_YAKIN_M = 150;
 const BOS_KALEM = { urunAd: '', urunKod: '', renk: '', cuval: '', toplamSeri: '' };
