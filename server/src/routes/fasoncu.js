@@ -78,10 +78,10 @@ const bildirimEkle = (aliciId, metin, tur, refId) => {
     .run(uid(), aliciId, metin, tur, refId ?? null, now());
 };
 
-const muhasebeyeMesaj = (icerik, gonderenAd) =>
+const yoneticiyeMesaj = (icerik, gonderenAd) =>
   db.prepare(`INSERT INTO mesajlar (id, tur, gonderen_id, gonderen_ad, alici_id, alici_rol, ref_gun, icerik, tarih)
               VALUES (?,?,?,?,?,?,?,?,?)`)
-    .run(uid(), 'gelen', null, gonderenAd, null, 'muhasebe', null, icerik, now());
+        .run(uid(), 'gelen', null, gonderenAd, null, 'yonetici', null, icerik, now());
 
 function kalemleriDogrula(girdi) {
   if (!Array.isArray(girdi) || girdi.length === 0) throw new Error('En az bir kalem girin.');
@@ -203,7 +203,7 @@ router.post('/api/fasoncu/gelen-mallar', wrap((req, res) => {
     const ekle = db.prepare(`INSERT INTO gelen_mal_kalem
       (id, gelen_id, sira, urun_ad, urun_kod, renk, cuval, toplam_seri) VALUES (?,?,?,?,?,?,?,?)`);
     kalemler.forEach((k, i) => ekle.run(uid(), id, i + 1, k.urunAd, k.urunKod, k.renk, k.cuval, k.toplam));
-    muhasebeyeMesaj([
+    yoneticiyeMesaj([
       'Dışarıdan mal geliyor (onay bekliyor)',
       `Bildiren: ${req.kullanici.ad}`,
       ...kalemler.map((k) => `• ${kalemYazi(k)}`),
@@ -220,7 +220,7 @@ router.post('/api/fasoncu/gelen-mallar/:id/basla', wrap((req, res) => {
   if (b.durum !== 'onaylandi') throw new Error('Bu bildirim henüz onaylanmadı.');
   db.transaction(() => {
     db.prepare("UPDATE gelen_mal SET durum = 'fasonda' WHERE id = ?").run(b.id);
-    muhasebeyeMesaj(`Fason başladı: ${kalemOzet(b.id)}`, req.kullanici.ad);
+    yoneticiyeMesaj(`Fason başladı: ${kalemOzet(b.id)}`, req.kullanici.ad);
   })();
   res.json({ ok: true });
 }));
@@ -238,7 +238,7 @@ router.post('/api/gelen-mallar/:id/onay', wrap((req, res) => {
     db.prepare("UPDATE gelen_mal SET durum = 'onaylandi', onay_tarih = ? WHERE id = ?").run(now(), b.id);
     bildirimEkle(
       b.gonderen_id,
-      `Muhasebe bildiriminizi kabul etti (${kalemOzet(b.id)}). Artık fasona başlayabilirsiniz.`,
+      `Depo sorumlusu bildiriminizi kabul etti (${kalemOzet(b.id)}). Artık fasona başlayabilirsiniz.`,
       'onay',
       b.id,
     );
@@ -255,7 +255,7 @@ router.post('/api/gelen-mallar/:id/reddet', wrap((req, res) => {
       .run(not || null, now(), b.id);
     bildirimEkle(
       b.gonderen_id,
-      `Muhasebe bildiriminizi reddetti.${not ? ` Neden: ${not}` : ''}`,
+      `Depo sorumlusu bildiriminizi reddetti.${not ? ` Neden: ${not}` : ''}`,
       'red',
       b.id,
     );

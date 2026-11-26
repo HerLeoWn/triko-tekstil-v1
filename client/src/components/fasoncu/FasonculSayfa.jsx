@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { get, post, put, del } from '../../lib/istek.js';
-import { MapPaneli } from '../harita/MapPaneli.jsx';
 import { osrmRota, adaAra, mesafeM, sureYazi } from '../../lib/rota.js';
 import { ConfirmButton } from '../../Confirm.jsx';
 
@@ -12,7 +11,7 @@ const saatYazi = (iso) => new Date(iso).toLocaleString('tr-TR', {
 });
 
 const GELEN_DURUM = {
-  bekliyor: ['Muhasebe onayı bekliyor', 'bg-warn-soft text-warn'],
+  bekliyor: ['Depo onayı bekliyor', 'bg-warn-soft text-warn'],
   onaylandi: ['Onaylandı', 'bg-accent-soft text-accent'],
   fasonda: ['Fasonda', 'bg-accent-soft text-accent'],
   girildi: ['Sisteme girildi', 'bg-track text-muted'],
@@ -32,31 +31,35 @@ function Rozet({ durum, harita }) {
 const kalemYazi = (k) =>
   `${k.urunAd}${k.urunKod ? ` (${k.urunKod})` : ''} · ${k.renk} · ${k.cuval} çuval${k.toplamSeri ? ` · ${k.toplamSeri} seri` : ''}`;
 
-// Fasoncu ekranı: gelen mal bildirimi, bildirimler, konum, rotasyonlar ve harita
+// Konum yaklaşık 100 m hassasiyetle yuvarlanır, böylece her GPS güncellemesinde rota yeniden hesaplanmaz
+const yuvarla = (n) => (n == null ? null : Math.round(n * 1000) / 1000);
+
+// Fasoncu ekranı: gelen mal bildirimi, bildirimler, konum ve tahmini varış, rotasyonlar
 export function FasonculSayfa({ kullanici, onCikis }) {
   const [kalemler, setKalemler] = useState([{ ...BOS_KALEM }]);
   const [gelenNot, setGelenNot] = useState({ tur: '', yazi: '' });
   const [gelenler, setGelenler] = useState([]);
   const [bildirimler, setBildirimler] = useState([]);
   const [rotalar, setRotalar] = useState([]);
+  const [depo, setDepo] = useState(null);
 
   const [konum, setKonum] = useState(null);
   const [konumHata, setKonumHata] = useState('');
   const [paylasim, setPaylasim] = useState(false);
+  const [eta, setEta] = useState(null);
   const konumRef = useRef(null);
   const ziyaretIsaretli = useRef(new Set());
 
   const [rotaForm, setRotaForm] = useState({ id: null, ad: '', duraklar: [] });
   const [aramaMetni, setAramaMetni] = useState('');
   const [sonuclar, setSonuclar] = useState([]);
-  const [secili, setSecili] = useState(null);
-  const [secRota, setSecRota] = useState(null);
   const [hata, setHata] = useState('');
 
   const yukle = () => {
     get('/api/fasoncu/gelen-mallar').then(setGelenler).catch(() => {});
     get('/api/fasoncu/bildirimler').then(setBildirimler).catch(() => {});
     get('/api/fasoncu/rotalar').then(setRotalar).catch(() => {});
+    get('/api/konum/depo').then((d) => setDepo(d?.lat != null ? d : null)).catch(() => {});
   };
 
   useEffect(() => {
@@ -100,6 +103,23 @@ export function FasonculSayfa({ kullanici, onCikis }) {
     return () => clearInterval(t);
   }, [paylasim]);
 
+  // Depoya tahmini varış süresi (konum ve depo konumu varsa)
+  const kLat = yuvarla(konum?.lat);
+  const kLng = yuvarla(konum?.lng);
+  const dLat = depo?.lat;
+  const dLng = depo?.lng;
+  useEffect(() => {
+    if (kLat == null || dLat == null) {
+      setEta(null);
+      return undefined;
+    }
+    let iptal = false;
+    osrmRota([{ lat: kLat, lng: kLng }, { lat: dLat, lng: dLng }])
+      .then((r) => { if (!iptal) setEta(r); })
+      .catch(() => { if (!iptal) setEta(null); });
+    return () => { iptal = true; };
+  }, [kLat, kLng, dLat, dLng]);
+
   // Aktif bir rotanın durağına yakınsa, gün içinde ilk ziyaret sunucuya bildirilir
   useEffect(() => {
     if (!konum) return;
@@ -116,28 +136,6 @@ export function FasonculSayfa({ kullanici, onCikis }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [konum, rotalar]);
 
-  // Seçili rotanın yol çizgisi (konum varsa konumdan başlar)
-  const secilen = rotalar.find((x) => x.id === secili) ?? null;
-  const secDurakAnahtar = secilen ? JSON.stringify(secilen.duraklar) : '';
-  const konumVar = !!konum;
-  useEffect(() => {
-    if (!secilen) {
-      setSecRota(null);
-      return undefined;
-    }
-    const noktalar = konum ? [konum, ...secilen.duraklar] : secilen.duraklar;
-    if (noktalar.length < 2) {
-      setSecRota(null);
-      return undefined;
-    }
-    let iptal = false;
-    osrmRota(noktalar)
-      .then((r) => { if (!iptal) setSecRota(r); })
-      .catch(() => { if (!iptal) { setSecRota(null); setHata('Rota çizilemedi. Biraz sonra tekrar deneyin.'); } });
-    return () => { iptal = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [secili, secDurakAnahtar, konumVar]);
-
   /* ---------- Gelen mal ---------- */
 
   const kalemGuncelle = (i, alan, deger) =>
@@ -149,7 +147,7 @@ export function FasonculSayfa({ kullanici, onCikis }) {
     setGelenNot({ tur: '', yazi: '' });
     try {
       await post('/api/fasoncu/gelen-mallar', { kalemler });
-      setGelenNot({ tur: 'ok', yazi: 'Muhasebeye bildirildi. Onay gelince bildirim göreceksiniz.' });
+      setGelenNot({ tur: 'ok', yazi: 'Depo sorumlusuna bildirildi. Onay gelince bildirim göreceksiniz.' });
       setKalemler([{ ...BOS_KALEM }]);
       yukle();
     } catch (e) {
@@ -162,11 +160,12 @@ export function FasonculSayfa({ kullanici, onCikis }) {
     post(`/api/fasoncu/gelen-mallar/${id}/basla`).then(yukle).catch((e) => setHata(e.message));
   };
 
-  const bildirimleriOkundu = () => {
-    const gelenSil = (id) => {
+  const gelenSil = (id) => {
     setHata('');
     del(`/api/fasoncu/gelen-mallar/${id}`).then(yukle).catch((e) => setHata(e.message));
   };
+
+  const bildirimleriOkundu = () => {
     post('/api/fasoncu/bildirimler/okundu').then(yukle).catch(() => {});
   };
 
@@ -227,7 +226,6 @@ export function FasonculSayfa({ kullanici, onCikis }) {
     if (!window.confirm(`"${r.ad}" rotasyonu silinsin mi?`)) return;
     try {
       await del(`/api/fasoncu/rotalar/${r.id}`);
-      if (secili === r.id) setSecili(null);
       if (rotaForm.id === r.id) rotaFormSifirla();
       yukle();
     } catch (e) {
@@ -247,11 +245,6 @@ export function FasonculSayfa({ kullanici, onCikis }) {
 
   const okunmamis = bildirimler.filter((b) => !b.okundu);
   const bugun = bugunKey();
-
-  const noktalar = [
-    ...(konum ? [{ lat: konum.lat, lng: konum.lng, ad: 'Ben', renk: '#2563eb' }] : []),
-    ...(secilen?.duraklar ?? []).map((d, i) => ({ lat: d.lat, lng: d.lng, ad: `${i + 1}. ${d.ad}`, renk: '#d97706' })),
-  ];
 
   return (
     <div className="min-h-screen bg-bg pb-10">
@@ -283,6 +276,26 @@ export function FasonculSayfa({ kullanici, onCikis }) {
         )}
 
         <section className="card p-4">
+          <h2 className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted">Konum ve tahmini varış</h2>
+          <button className={paylasim ? 'btn' : 'btn-ghost'} onClick={() => setPaylasim((p) => !p)}>
+            {paylasim ? 'Konum paylaşımını durdur' : 'Konumumu paylaşmaya başla'}
+          </button>
+          <p className="mt-2 text-xs text-muted">
+            Paylaşım açıkken depo sorumlusu tahmini varış sürenizi görür. Kapattığınızda ya da sayfayı kapattığınızda paylaşım durur.
+          </p>
+
+          <div className="mt-3 text-base">
+            {!konum && !konumHata && <span className="text-muted">Konum bekleniyor…</span>}
+            {konum && !depo && <span className="text-muted">Depo konumu henüz tanımlanmadı.</span>}
+            {konum && depo && eta && (
+              <>Depoya tahmini <b>{sureYazi(eta.sureSn)}</b> · {(eta.mesafeM / 1000).toFixed(1)} km</>
+            )}
+            {konum && depo && !eta && <span className="text-muted">Süre hesaplanıyor…</span>}
+          </div>
+          {konumHata && <p className="mt-2 text-sm text-warn">⚠ {konumHata}</p>}
+        </section>
+
+        <section className="card p-4">
           <h2 className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted">Gelen mal bildir</h2>
           <p className="mb-3 text-xs text-muted">Her renk ve her farklı kod ayrı kalem olarak girilir.</p>
           <div className="grid gap-3">
@@ -311,7 +324,7 @@ export function FasonculSayfa({ kullanici, onCikis }) {
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button className="btn-ghost btn-sm" onClick={kalemEkle}>+ Kalem ekle</button>
-            <button className="btn" onClick={bildir}>Muhasebeye bildir</button>
+            <button className="btn" onClick={bildir}>Depo sorumlusuna bildir</button>
           </div>
           {gelenNot.yazi && (
             <p className={`mt-2 text-sm ${gelenNot.tur === 'ok' ? 'text-accent' : 'text-warn'}`}>{gelenNot.yazi}</p>
@@ -336,7 +349,7 @@ export function FasonculSayfa({ kullanici, onCikis }) {
                   {g.durum === 'reddedildi' && g.not && (
                     <p className="mt-2 text-sm text-danger">Neden: {g.not}</p>
                   )}
-                                    <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-3 flex flex-wrap gap-2">
                     {g.durum === 'onaylandi' && (
                       <button className="btn btn-sm" onClick={() => fasonaBasla(g.id)}>Fasona başla</button>
                     )}
@@ -348,17 +361,6 @@ export function FasonculSayfa({ kullanici, onCikis }) {
               ))}
             </div>
           )}
-        </section>
-
-        <section className="card p-4">
-          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-wide text-muted">Konumum</h2>
-          <button className={paylasim ? 'btn' : 'btn-ghost'} onClick={() => setPaylasim((p) => !p)}>
-            {paylasim ? 'Konum paylaşımını durdur' : 'Konumumu paylaşmaya başla'}
-          </button>
-          <p className="mt-2 text-xs text-muted">
-            Konum yalnızca bu sayfa açıkken paylaşılır. Uygulamayı kapatırsanız paylaşım durur.
-          </p>
-          {konumHata && <p className="mt-2 text-sm text-warn">⚠ {konumHata}</p>}
         </section>
 
         <section className="card p-4">
@@ -452,9 +454,6 @@ export function FasonculSayfa({ kullanici, onCikis }) {
                     )}
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <button className="btn-ghost btn-sm" onClick={() => setSecili(secili === r.id ? null : r.id)}>
-                        {secili === r.id ? 'Haritayı gizle' : 'Haritada göster'}
-                      </button>
                       <button className="btn-ghost btn-sm" onClick={() => rotaDuzenle(r)}>Düzenle</button>
                       {r.durum !== 'aktif' && (
                         <button className="btn-ghost btn-sm" onClick={() => aktifeAl(r)}>Aktife al</button>
@@ -466,21 +465,6 @@ export function FasonculSayfa({ kullanici, onCikis }) {
               })}
             </div>
           )}
-        </section>
-
-        <section className="card p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-[11px] font-medium uppercase tracking-wide text-muted">Harita</h2>
-            {secRota && (
-              <span className="text-sm">
-                Tahmini <b>{sureYazi(secRota.sureSn)}</b> · {(secRota.mesafeM / 1000).toFixed(1)} km
-              </span>
-            )}
-          </div>
-          <MapPaneli noktalar={noktalar} cizgi={secRota?.cizgi ?? null} />
-          <p className="mt-2 text-xs text-muted">
-            Harita, haritada gösterdiğiniz rotayı çizer. Rota, durakları girdiğiniz sırayla bağlar.
-          </p>
           {hata && <p className="mt-3 text-sm text-warn">⚠ {hata}</p>}
         </section>
       </main>

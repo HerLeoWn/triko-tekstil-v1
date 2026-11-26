@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { get, post, put } from '../../lib/istek.js';
-import { MapPaneli } from '../harita/MapPaneli.jsx';
 import { osrmRota, sureYazi } from '../../lib/rota.js';
 import { Empty } from '../ui/Empty.jsx';
 
@@ -11,12 +10,15 @@ const DURUM = {
   girildi: ['Sisteme girildi', 'bg-track text-muted'],
   reddedildi: ['Reddedildi', 'bg-warn-soft text-danger'],
 };
+const BAYAT_MS = 3 * 60 * 1000;
 
 const saatYazi = (iso) => (iso ? new Date(iso).toLocaleString('tr-TR', {
   timeZone: 'Europe/Istanbul', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
 }) : '');
 
-// Gelen mallar: kalemler, muhasebe onayı, fasoncu konumu ve depoya tahmini süre
+const yuvarla = (n) => (n == null ? null : Math.round(n * 1000) / 1000);
+
+// Gelen mallar: depo sorumlusu onaylar, fasoncunun depoya tahmini süresini metin olarak görür
 export function GelenMallarPaneli({ yonetici = false }) {
   const [liste, setListe] = useState([]);
   const [fasoncu, setFasoncu] = useState(null);
@@ -37,8 +39,8 @@ export function GelenMallarPaneli({ yonetici = false }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fLat = fasoncu?.lat;
-  const fLng = fasoncu?.lng;
+  const fLat = yuvarla(fasoncu?.lat);
+  const fLng = yuvarla(fasoncu?.lng);
   const dLat = depo?.lat;
   const dLng = depo?.lng;
   useEffect(() => {
@@ -86,34 +88,32 @@ export function GelenMallarPaneli({ yonetici = false }) {
     );
   };
 
-  const noktalar = [
-    ...(depo ? [{ lat: depo.lat, lng: depo.lng, ad: 'Depo', renk: '#3d7a4f' }] : []),
-    ...(fasoncu ? [{ lat: fasoncu.lat, lng: fasoncu.lng, ad: fasoncu.ad, renk: '#2563eb' }] : []),
-  ];
+  const bayat = fasoncu && Date.now() - new Date(fasoncu.zaman).getTime() > BAYAT_MS;
 
   return (
     <div className="space-y-4">
       <div className="card p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted">Fasoncu konumu</h3>
+          <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted">Fasoncu durumu</h3>
           {yonetici && (
             <button className="btn-ghost btn-sm" onClick={depoKonumKaydet}>Depo konumunu bu cihazdan kaydet</button>
           )}
         </div>
 
-        <div className="mb-3 text-sm">
+        <div className="text-sm">
           {fasoncu
-            ? <>{fasoncu.ad} · son konum {saatYazi(fasoncu.zaman)}</>
+            ? <>{fasoncu.ad} · son konum {saatYazi(fasoncu.zaman)}{bayat ? ' (eski konum)' : ''}</>
             : <span className="text-muted">Fasoncu konumunu paylaşmıyor.</span>}
-          {rota && (
-            <div className="mt-1">
-              Depoya tahmini <b>{sureYazi(rota.sureSn)}</b> · {(rota.mesafeM / 1000).toFixed(1)} km
-            </div>
-          )}
-          {!depo && <div className="mt-1 text-muted">Depo konumu tanımlı değil.</div>}
         </div>
 
-        <MapPaneli noktalar={noktalar} cizgi={rota?.cizgi ?? null} yukseklik={260} />
+        <div className="mt-2 text-base">
+          {!depo && <span className="text-muted">Depo konumu tanımlı değil.</span>}
+          {depo && fasoncu && rota && (
+            <>Depoya tahmini <b>{sureYazi(rota.sureSn)}</b> · {(rota.mesafeM / 1000).toFixed(1)} km</>
+          )}
+          {depo && fasoncu && !rota && <span className="text-muted">Süre hesaplanıyor…</span>}
+        </div>
+
         {hata && <p className="mt-2 text-sm text-warn">⚠ {hata}</p>}
       </div>
 

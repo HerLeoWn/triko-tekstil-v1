@@ -109,7 +109,7 @@ function YoneticiEkrani({ kullanici, onCikis }) {
               setQ={setQ}
             />
             {tab === 'gelen' ? (
-              <GelenMallarPaneli yonetici />
+              <div className="p-4"><GelenMallarPaneli yonetici /></div>
             ) : tab === 'gorevler' ? (
               <GorevPaneli liste={gorev.liste} yenile={gorev.yenile} />
             ) : (

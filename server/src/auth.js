@@ -10,7 +10,7 @@ const HERKESE_ACIK = ['/api/kurulum', '/api/giris', '/api/cikis', '/api/ben', '/
 // Şifresini yenilemesi gereken kullanıcının erişebildiği yollar
 const SIFRE_ISTISNA = ['/api/hesap', '/api/ben', '/api/cikis'];
 // Fasoncu GET ile yalnızca kendi alanındaki verilere ulaşır (stok, çuval, giden vb. görmez)
-const FASONCU_GET = ['/api/fasoncu'];
+const FASONCU_GET = ['/api/fasoncu', '/api/konum/depo']; // depo konumu: fasoncunun tahmini süresi için
 
 let aktifAd = 'sistem';
 export const getAktif = () => aktifAd;
@@ -117,8 +117,8 @@ function izinliRoller(method, path) {
     return ['yonetici'];
   }
   if (path.startsWith('/api/konum/depo') && method !== 'GET') return ['yonetici'];
-  if (path.startsWith('/api/konum/fasoncu')) return method === 'GET' ? ['yonetici', 'muhasebe'] : ['fasoncu'];
-  if (path.startsWith('/api/gelen-mallar')) return ['yonetici', 'muhasebe'];
+  if (path.startsWith('/api/konum/fasoncu')) return method === 'GET' ? ['yonetici'] : ['fasoncu'];
+   if (path.startsWith('/api/gelen-mallar')) return ['yonetici'];
   if (method === 'GET') return null;
   if (path.startsWith('/api/yedek') || path === '/api/geri-al') return ['yonetici'];
   if (path.startsWith('/api/giden/') && method === 'PUT') return ['yonetici', 'muhasebe'];
