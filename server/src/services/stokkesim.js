@@ -59,3 +59,22 @@ export function geriEkle(kod, renk, seri, cuvalIci, depoId = 1) {
     kalan -= k;
   }
 }
+
+// Karma çuval ekler: her çuvalın içinde birden fazla renk-seri parçası olabilir.
+// parcalar: [{ renk, seri }] (tek çuvalın içeriği), adet: kaç özdeş çuval
+export function karmaCuvalEkle(kod, parcalar, adet, depoId) {
+  const t = now();
+  const cuvalIci = parcalar.reduce((s, p) => s + p.seri, 0);
+  const renk = anaRenk(parcalar);
+  for (let i = 0; i < adet; i++) {
+    insertCuval(
+      kod,
+      renk,
+      cuvalIci,
+      [...Array(cuvalIci)].map(() => [...FULL]),
+      t,
+      parcalar.map((p) => ({ renk: p.renk, seri: p.seri })),
+      depoId,
+    );
+  }
+}

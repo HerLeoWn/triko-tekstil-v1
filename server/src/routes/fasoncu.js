@@ -2,8 +2,8 @@
 import express from 'express';
 import { db } from '../db.js';
 import './mesajlar.js'; // mesajlar tablosu hazır olsun
-import { uid, now, wrap, logH, depoGecerli, depoAd } from '../lib/yardimcilar.js';
-import { stokSeriByRenk, renktenDus, geriEkle } from '../services/stokkesim.js';
+import { uid, now, wrap, logH, depoGecerli, depoAd, parcaListesi } from '../lib/yardimcilar.js';
+import { stokSeriByRenk, renktenDus, karmaCuvalEkle } from '../services/stokkesim.js';
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS ayarlar (anahtar TEXT PRIMARY KEY, deger TEXT);
@@ -369,7 +369,7 @@ router.delete('/api/fasoncu/gelen-mallar/:id', wrap((req, res) => {
   res.json({ ok: true });
 }));
 
-/* ---------- Depo hareketleri: fasoncu tek depodan birden fazla kalem bildirir, depo sorumlusu onaylar ---------- */
+/* ---------- Depo hareketleri: fasoncu tek depoda birden fazla çuval grubu bildirir, depo sorumlusu onaylar ---------- */
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS fason_islem (
@@ -383,28 +383,41 @@ db.exec(`
     tarih TEXT NOT NULL,
     onay_tarih TEXT
   );
-  CREATE TABLE IF NOT EXISTS fason_islem_kalem (
+  CREATE TABLE IF NOT EXISTS fason_grup (
     id TEXT PRIMARY KEY,
     islem_id TEXT NOT NULL,
     sira INTEGER NOT NULL,
     kod TEXT NOT NULL,
+    cuval INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS fason_grup_parca (
+    id TEXT PRIMARY KEY,
+    grup_id TEXT NOT NULL,
+    sira INTEGER NOT NULL,
     renk TEXT NOT NULL,
-    cuval INTEGER NOT NULL,
     seri INTEGER NOT NULL
   );
 `);
 
 const urunAdi = (kod) => db.prepare('SELECT ad FROM urunler WHERE kod = ? COLLATE NOCASE').get(kod)?.ad ?? '';
 
-const islemKalemleri = (islemId) =>
-  db.prepare('SELECT * FROM fason_islem_kalem WHERE islem_id = ? ORDER BY sira').all(islemId).map((k) => ({
-    id: k.id,
-    kod: k.kod,
-    urunAd: urunAdi(k.kod),
-    renk: k.renk,
-    cuval: k.cuval,
-    seri: k.seri,
-  }));
+// Bir işlemin çuval grupları. Her grupta çuval sayısı ve bir çuvalın içindeki renk-seri parçaları bulunur.
+const gruplar = (islemId) =>
+  db.prepare('SELECT * FROM fason_grup WHERE islem_id = ? ORDER BY sira').all(islemId).map((g) => {
+    const parcalar = db.prepare('SELECT renk, seri FROM fason_grup_parca WHERE grup_id = ? ORDER BY sira')
+      .all(g.id)
+      .map((p) => ({ renk: p.renk, seri: p.seri }));
+    const cuvalIci = parcalar.reduce((s, p) => s + p.seri, 0);
+    return {
+      id: g.id,
+      kod: g.kod,
+      urunAd: urunAdi(g.kod),
+      cuval: g.cuval,
+      parcalar,
+      cuvalIci,
+      toplamSeri: cuvalIci * g.cuval,
+    };
+  });
 
 const islemSatir = (h) => ({
   id: h.id,
@@ -414,7 +427,7 @@ const islemSatir = (h) => ({
   not: h.not_metni ?? '',
   fasoncuAd: h.fasoncu_ad ?? '',
   tarih: h.tarih,
-  kalemler: islemKalemleri(h.id),
+  kalemler: gruplar(h.id),
 });
 
 const islemBul = (id) => {
@@ -423,16 +436,49 @@ const islemBul = (id) => {
   return h;
 };
 
-// Aynı kod ve renk birden fazla satırdaysa toplanır (stok kontrolü için)
-const kalemIhtiyaci = (kalemler) => {
+// Grupları renk bazında toplar: her kod+renk için toplam seri (stok kontrolü ve düşme için)
+const ihtiyacHesapla = (grupListesi) => {
   const map = new Map();
-  kalemler.forEach((k) => {
-    const anahtar = `${k.kod.toLowerCase()}|${k.renk.toLowerCase()}`;
-    const e = map.get(anahtar) ?? { kod: k.kod, renk: k.renk, seri: 0 };
-    e.seri += k.seri;
-    map.set(anahtar, e);
+  grupListesi.forEach((g) => {
+    g.parcalar.forEach((p) => {
+      const anahtar = `${g.kod.toLowerCase()}|${p.renk.toLowerCase()}`;
+      const e = map.get(anahtar) ?? { kod: g.kod, renk: p.renk, seri: 0 };
+      e.seri += g.cuval * p.seri;
+      map.set(anahtar, e);
+    });
   });
   return [...map.values()];
+};
+
+// Gelen çuval grubu girdisini doğrular ve aynı renkleri birleştirir
+const grupDogrula = (girdi) => {
+  if (!Array.isArray(girdi) || girdi.length === 0) throw new Error('En az bir çuval grubu girin.');
+  if (girdi.length > 30) throw new Error('Bir bildirimde en fazla 30 çuval grubu olabilir.');
+  return girdi.map((g, i) => {
+    const no = i + 1;
+    const kod = String(g?.kod ?? '').trim();
+    const cuval = parseInt(g?.cuval, 10);
+    if (!kod) throw new Error(`${no}. satırda ürün kodu eksik.`);
+    if (!db.prepare('SELECT 1 FROM urunler WHERE kod = ? COLLATE NOCASE').get(kod)) {
+      throw new Error(`${kod} ürün listesinde yok.`);
+    }
+    if (!(cuval > 0)) throw new Error(`${no}. satırda çuval sayısı eksik.`);
+    const pg = Array.isArray(g?.parcalar) ? g.parcalar : [];
+    if (pg.length === 0) throw new Error(`${no}. satırda renk ve seri girin.`);
+    if (pg.length > 20) throw new Error(`${no}. satırda en fazla 20 renk olabilir.`);
+    const harita = new Map();
+    pg.forEach((p) => {
+      const renk = String(p?.renk ?? '').trim();
+      const seri = parseInt(p?.seri, 10);
+      if (!renk) throw new Error(`${no}. satırda renk eksik.`);
+      if (!(seri > 0)) throw new Error(`${no}. satırda ${renk} için seri eksik.`);
+      const a = renk.toLowerCase();
+      const e = harita.get(a) ?? { renk, seri: 0 };
+      e.seri += seri;
+      harita.set(a, e);
+    });
+    return { kod, cuval, parcalar: [...harita.values()] };
+  });
 };
 
 // Fasoncunun depo listesi (form için)
@@ -440,31 +486,52 @@ router.get('/api/fasoncu/depolar', wrap((req, res) => {
   res.json(db.prepare('SELECT id, ad FROM depolar ORDER BY sira').all());
 }));
 
-// Fasoncu: tek depodan birden fazla kalem içeren alım ya da teslim bildirir
+// Fasoncu formu için: seçilen depodaki kodlar, renkler ve seri sayıları, çuval içi seri
+router.get('/api/fasoncu/depo-stok', wrap((req, res) => {
+  const depoId = depoGecerli(req.query.depoId);
+
+  // kod (küçük harf) → renk (küçük harf) → { renk, seri }
+  const renkMap = new Map();
+  db.prepare('SELECT * FROM cuvallar WHERE depo_id = ?').all(depoId).forEach((r) => {
+    const k = String(r.kod).toLowerCase();
+    if (!renkMap.has(k)) renkMap.set(k, new Map());
+    const m = renkMap.get(k);
+    parcaListesi(r).forEach((p) => {
+      const rk = p.renk.trim().toLowerCase();
+      const e = m.get(rk) ?? { renk: p.renk.trim(), seri: 0 };
+      e.seri += p.seri;
+      m.set(rk, e);
+    });
+  });
+
+  // Her kodun çuval içi seri sayısı: en son kaydedilen çuvaldan (depo fark etmez)
+  const cuvalIci = new Map();
+  db.prepare('SELECT kod, cuval_ici FROM cuvallar ORDER BY olusturma DESC').all().forEach((r) => {
+    const k = String(r.kod).toLowerCase();
+    if (!cuvalIci.has(k) && r.cuval_ici) cuvalIci.set(k, r.cuval_ici);
+  });
+
+  const kodlar = db.prepare('SELECT kod, ad FROM urunler ORDER BY kod').all().map((u) => {
+    const k = u.kod.toLowerCase();
+    const renkler = [...(renkMap.get(k)?.values() ?? [])]
+      .filter((r) => r.seri > 0)
+      .sort((a, b) => a.renk.localeCompare(b.renk, 'tr'));
+    return { kod: u.kod, ad: u.ad ?? '', cuvalIci: cuvalIci.get(k) ?? null, renkler };
+  });
+
+  res.json({ kodlar });
+}));
+
+// Fasoncu: çuval gruplarıyla alım ya da teslim bildirir
 router.post('/api/fasoncu/islemler', wrap((req, res) => {
   const tip = req.body.tip === 'teslim' ? 'teslim' : req.body.tip === 'alim' ? 'alim' : null;
   if (!tip) throw new Error('Hareket tipi seçin: alım ya da teslim.');
   const depoId = depoGecerli(req.body.depoId);
   const not = String(req.body.not ?? '').trim().slice(0, 200);
-  const girdi = Array.isArray(req.body.kalemler) ? req.body.kalemler : [];
-  if (!girdi.length) throw new Error('En az bir kalem girin.');
-  if (girdi.length > 30) throw new Error('Bir bildirimde en fazla 30 kalem olabilir.');
-
-  const kalemler = girdi.map((k, i) => {
-    const no = i + 1;
-    const kod = String(k?.kod ?? '').trim();
-    const renk = String(k?.renk ?? '').trim();
-    const cuval = parseInt(k?.cuval, 10);
-    const seri = parseInt(k?.seri, 10);
-    if (!kod) throw new Error(`${no}. kalemde ürün kodu eksik.`);
-    if (!renk) throw new Error(`${no}. kalemde renk eksik.`);
-    if (!(cuval > 0)) throw new Error(`${no}. kalemde çuval sayısı eksik.`);
-    if (!(seri > 0)) throw new Error(`${no}. kalemde seri sayısı eksik.`);
-    return { kod, renk, cuval, seri };
-  });
+  const grupListesi = grupDogrula(req.body.gruplar);
 
   if (tip === 'alim') {
-    kalemIhtiyaci(kalemler).forEach((k) => {
+    ihtiyacHesapla(grupListesi).forEach((k) => {
       const mevcut = stokSeriByRenk(k.kod, depoId)[k.renk.toLowerCase()] || 0;
       if (k.seri > mevcut) {
         throw new Error(`${k.kod} ${k.renk}: ${depoAd(depoId)} deposunda yalnızca ${mevcut} seri var, ${k.seri} girdiniz.`);
@@ -477,19 +544,24 @@ router.post('/api/fasoncu/islemler', wrap((req, res) => {
     db.prepare(`INSERT INTO fason_islem (id, tip, durum, fasoncu_id, fasoncu_ad, depo_id, not_metni, tarih)
                 VALUES (?,?,'bekliyor',?,?,?,?,?)`)
       .run(id, tip, req.kullanici.id, req.kullanici.ad, depoId, not || null, now());
-    const ekle = db.prepare(`INSERT INTO fason_islem_kalem (id, islem_id, sira, kod, renk, cuval, seri)
-                             VALUES (?,?,?,?,?,?,?)`);
-    kalemler.forEach((k, i) => ekle.run(uid(), id, i + 1, k.kod, k.renk, k.cuval, k.seri));
+    const grupEkle = db.prepare('INSERT INTO fason_grup (id, islem_id, sira, kod, cuval) VALUES (?,?,?,?,?)');
+    const parcaEkle = db.prepare('INSERT INTO fason_grup_parca (id, grup_id, sira, renk, seri) VALUES (?,?,?,?,?)');
+    grupListesi.forEach((g, i) => {
+      const grupId = uid();
+      grupEkle.run(grupId, id, i + 1, g.kod, g.cuval);
+      g.parcalar.forEach((p, j) => parcaEkle.run(uid(), grupId, j + 1, p.renk, p.seri));
+    });
     yoneticiyeMesaj([
       tip === 'alim'
         ? `${depoAd(depoId)} deposundan mal alındı (onay bekliyor)`
         : `${depoAd(depoId)} deposuna mal teslim edildi (onay bekliyor)`,
       `Bildiren: ${req.kullanici.ad}`,
-      ...kalemler.map((k) => `• ${k.kod} ${k.renk} · ${k.cuval} çuval · ${k.seri} seri`),
+      ...grupListesi.map((g) =>
+        `• ${g.kod} · ${g.cuval} çuval × (${g.parcalar.map((p) => `${p.renk} ${p.seri}`).join(', ')}) = ${g.cuval * g.parcalar.reduce((s, p) => s + p.seri, 0)} seri`),
     ].join('\n'), req.kullanici.ad);
   })();
   logH(tip === 'alim' ? 'fason alım bildirildi' : 'fason teslim bildirildi', '', '',
-    `${req.kullanici.ad} · ${depoAd(depoId)} · ${kalemler.length} kalem`);
+    `${req.kullanici.ad} · ${depoAd(depoId)} · ${grupListesi.length} çuval grubu`);
   res.status(201).json({ ok: true, id });
 }));
 
@@ -505,7 +577,8 @@ router.delete('/api/fasoncu/islemler/:id', wrap((req, res) => {
   if (h.fasoncu_id !== req.kullanici.id) throw new Error('Bu kayıt size ait değil.');
   if (h.durum !== 'bekliyor') throw new Error('Onaylanmış ya da reddedilmiş kayıt silinemez.');
   db.transaction(() => {
-    db.prepare('DELETE FROM fason_islem_kalem WHERE islem_id = ?').run(h.id);
+    db.prepare(`DELETE FROM fason_grup_parca WHERE grup_id IN (SELECT id FROM fason_grup WHERE islem_id = ?)`).run(h.id);
+    db.prepare('DELETE FROM fason_grup WHERE islem_id = ?').run(h.id);
     db.prepare('DELETE FROM fason_islem WHERE id = ?').run(h.id);
   })();
   res.json({ ok: true });
@@ -518,16 +591,17 @@ router.get('/api/fason-islemler', wrap((req, res) => {
     .all().map(islemSatir));
 }));
 
-// Onay: alım kalem kalem stoktan düşer ve giden kayıtları aynı zamanla oluşur (tek fiş),
-// teslim kalem kalem stoğa geri eklenir
+// Onay: alım renk bazında stoktan düşer, giden kaydı oluşur (tek fiş).
+// Teslim karma çuval olarak stoğa eklenir.
 router.post('/api/fason-islemler/:id/onay', wrap((req, res) => {
   const h = islemBul(req.params.id);
   if (h.durum !== 'bekliyor') throw new Error('Bu hareket zaten işlendi.');
-  const kalemler = islemKalemleri(h.id);
+  const grupListesi = gruplar(h.id);
   db.transaction(() => {
     const t = now();
     if (h.tip === 'alim') {
-      kalemIhtiyaci(kalemler).forEach((k) => {
+      const ihtiyac = ihtiyacHesapla(grupListesi);
+      ihtiyac.forEach((k) => {
         const mevcut = stokSeriByRenk(k.kod, h.depo_id)[k.renk.toLowerCase()] || 0;
         if (k.seri > mevcut) {
           throw new Error(`${k.kod} ${k.renk}: yalnızca ${mevcut} seri var, ${k.seri} onaylanamaz.`);
@@ -535,20 +609,22 @@ router.post('/api/fason-islemler/:id/onay', wrap((req, res) => {
       });
       const ekle = db.prepare(`INSERT INTO giden (id, kod, renk, cuval_adedi, seri, tarih, cuval_ici, stok, depo_id)
                                VALUES (?,?,?,?,?,?,?,1,?)`);
-      kalemler.forEach((k) => {
+      ihtiyac.forEach((k) => {
         const sonuc = renktenDus(k.kod, k.renk, k.seri, h.depo_id);
         ekle.run(uid(), k.kod, k.renk, sonuc.cuvalSayisi, k.seri, t, sonuc.cuvalIci ?? 0, h.depo_id);
         logH('fason alım onaylandı', k.kod, k.renk, `${depoAd(h.depo_id)} · ${k.seri} seri · ${h.fasoncu_ad}`);
       });
     } else {
-      kalemler.forEach((k) => {
-        geriEkle(k.kod, k.renk, k.seri, Math.ceil(k.seri / k.cuval), h.depo_id);
-        logH('fason teslim onaylandı', k.kod, k.renk, `${depoAd(h.depo_id)} · ${k.seri} seri · ${h.fasoncu_ad}`);
+      grupListesi.forEach((g) => {
+        karmaCuvalEkle(g.kod, g.parcalar, g.cuval, h.depo_id);
+        logH('fason teslim onaylandı', g.kod,
+          g.parcalar.map((p) => p.renk).join(', '),
+          `${depoAd(h.depo_id)} · ${g.cuval} çuval · ${g.toplamSeri} seri · ${h.fasoncu_ad}`);
       });
     }
     db.prepare("UPDATE fason_islem SET durum = 'onaylandi', onay_tarih = ? WHERE id = ?").run(t, h.id);
     bildirimEkle(h.fasoncu_id,
-      `${h.tip === 'alim' ? 'Alım' : 'Teslim'} onaylandı (${kalemler.length} kalem, ${depoAd(h.depo_id)})`, 'onay', h.id);
+      `${h.tip === 'alim' ? 'Alım' : 'Teslim'} onaylandı (${grupListesi.length} çuval grubu, ${depoAd(h.depo_id)})`, 'onay', h.id);
   })();
   res.json({ ok: true });
 }));
