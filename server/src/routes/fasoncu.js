@@ -4,6 +4,7 @@ import { db } from '../db.js';
 import './mesajlar.js'; // mesajlar tablosu hazır olsun
 import { uid, now, wrap, logH, depoGecerli, depoAd, parcaListesi } from '../lib/yardimcilar.js';
 import { stokSeriByRenk, renktenDus, karmaCuvalEkle } from '../services/stokkesim.js';
+import { yoneticilereGonder, bildirimGonder } from '../lib/push.js';
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS ayarlar (anahtar TEXT PRIMARY KEY, deger TEXT);
@@ -77,13 +78,15 @@ const bildirimEkle = (aliciId, metin, tur, refId) => {
   if (!aliciId) return;
   db.prepare('INSERT INTO fasoncu_bildirim (id, alici_id, metin, tur, ref_id, okundu, tarih) VALUES (?,?,?,?,?,0,?)')
     .run(uid(), aliciId, metin, tur, refId ?? null, now());
+  bildirimGonder([aliciId], { baslik: 'Triko', metin, url: '/' });
 };
-
 // Depo sorumlusunun mesaj kutusuna düşen bildirim
-const yoneticiyeMesaj = (icerik, gonderenAd) =>
+const yoneticiyeMesaj = (icerik, gonderenAd) => {
   db.prepare(`INSERT INTO mesajlar (id, tur, gonderen_id, gonderen_ad, alici_id, alici_rol, ref_gun, icerik, tarih)
               VALUES (?,?,?,?,?,?,?,?,?)`)
     .run(uid(), 'gelen', null, gonderenAd, null, 'yonetici', null, icerik, now());
+  yoneticilereGonder({ baslik: 'Triko', metin: icerik.split('\n')[0], url: '/' });
+};
 
 function kalemleriDogrula(girdi) {
   if (!Array.isArray(girdi) || girdi.length === 0) throw new Error('En az bir kalem girin.');

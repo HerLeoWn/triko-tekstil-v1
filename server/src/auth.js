@@ -11,7 +11,7 @@ const HERKESE_ACIK = ['/api/kurulum', '/api/giris', '/api/cikis', '/api/ben', '/
 const SIFRE_ISTISNA = ['/api/hesap', '/api/ben', '/api/cikis'];
 // Fasoncu GET ile yalnızca kendi alanındaki verilere ulaşır (stok, çuval, giden vb. görmez).
 // Depo konumu, fasoncunun tahmini süresi için açıktır.
-const FASONCU_GET = ['/api/fasoncu', '/api/konum/depo'];
+const FASONCU_GET = ['/api/fasoncu', '/api/konum/depo', '/api/push'];
 
 let aktifAd = 'sistem';
 export const getAktif = () => aktifAd;
@@ -117,7 +117,7 @@ function izinliRoller(method, path) {
     if (path === '/api/gorevler' || path.endsWith('/iptal')) return ['muhasebe'];
     return ['yonetici'];
   }
-    if (path.startsWith('/api/fason-islemler')) return ['yonetici'];
+  if (path.startsWith('/api/fason-islemler')) return ['yonetici'];
   if (path.startsWith('/api/konum/depo') && method !== 'GET') return ['yonetici'];
   if (path.startsWith('/api/konum/fasoncu')) return method === 'GET' ? ['yonetici'] : ['fasoncu'];
   if (path.startsWith('/api/gelen-mallar')) return ['yonetici'];

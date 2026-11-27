@@ -7,6 +7,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import fasoncuRouter from './routes/fasoncu.js';
+import bildirimRouter from './routes/bildirim.js';
 
 import { db, ilkKez } from './db.js';
 import { listele, geriYukle, islemOncesi, baslatOtomatikYedek } from './yedek.js';
@@ -41,7 +42,7 @@ app.use(degisiklikBildirimi);
 
 // İş rotaları
 [
-    cuvallarRouter, gidenRouter, bitenRouter, stokRouter, depolarRouter, urunlerRouter, hareketlerRouter, yedekRouter, kullanicilarRouter, raporRouter, gorevlerRouter, sifreRouter, fasoncuRouter,
+    cuvallarRouter, gidenRouter, bitenRouter, stokRouter, depolarRouter, urunlerRouter, hareketlerRouter, yedekRouter, kullanicilarRouter, raporRouter, gorevlerRouter, sifreRouter, fasoncuRouter,bildirimRouter,
 ].forEach((r) => app.use(r));
 
 /* ---------- Acil durum şifre sıfırlama ---------- */

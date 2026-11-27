@@ -9,6 +9,7 @@ import { useIslemler } from '../hooks/useIslemler.js';
 import { useMesajlar } from '../hooks/useMesajlar.js';
 import { useGorevler } from '../hooks/useGorevler.js';
 import { get } from '../lib/istek.js';
+import { bildirimleriAc, pushDestekli } from '../lib/bildirim.js';
 import Baslik from '../components/layout/Baslik.jsx';
 import { SekmeMenu } from '../components/layout/SekmeMenu.jsx';
 import YanPanel from '../components/layout/YanPanel.jsx';
@@ -94,8 +95,29 @@ function YoneticiEkrani({ kullanici, onCikis }) {
   const [mesajAcik, setMesajAcik] = useState(false);
   const [form, setForm] = useState(null);
   const [urunDuz, setUrunDuz] = useState(null);
+  const [bildirimDurum, setBildirimDurum] = useState(() =>
+    (pushDestekli() ? Notification.permission : 'yok'));
+  const [bildirimHata, setBildirimHata] = useState('');
 
   const bekleyenHareket = useBekleyenHareket();
+
+  // İzin daha önce verildiyse cihaz aboneliğini sessizce yeniler
+  useEffect(() => {
+    if (pushDestekli() && Notification.permission === 'granted') {
+      bildirimleriAc().catch(() => {});
+    }
+  }, []);
+
+  const bildirimAc = async () => {
+    setBildirimHata('');
+    try {
+      await bildirimleriAc();
+      setBildirimDurum('granted');
+    } catch (e) {
+      setBildirimHata(e.message);
+      setBildirimDurum(pushDestekli() ? Notification.permission : 'yok');
+    }
+  };
 
   const TABS = [
     ['stok', 'Stok özeti'],
@@ -134,6 +156,21 @@ function YoneticiEkrani({ kullanici, onCikis }) {
           onYeniGiden={() => setForm({ type: 'giden' })}
           onCikis={onCikis}
         />
+
+        {bildirimDurum === 'default' && (
+          <div className="mx-auto mt-4 flex w-[calc(100%-2rem)] max-w-6xl flex-wrap items-center justify-between gap-3 rounded-xl bg-accent-soft px-4 py-3 sm:w-[calc(100%-3rem)]">
+            <span className="text-sm">Sekme kapalıyken de bildirim ve ses gelsin diye izin verin.</span>
+            <button type="button" className="btn btn-sm" onClick={bildirimAc}>Bildirimleri aç</button>
+          </div>
+        )}
+        {bildirimDurum === 'denied' && (
+          <p className="mx-auto mt-2 max-w-6xl px-4 text-xs text-warn">
+            Bildirimler tarayıcıda kapalı. Site ayarlarından izin verin.
+          </p>
+        )}
+        {bildirimHata && (
+          <p className="mx-auto mt-2 max-w-6xl px-4 text-xs text-warn">{bildirimHata}</p>
+        )}
 
         {bekleyenHareket > 0 && tab !== 'hareketler' && (
           <button
