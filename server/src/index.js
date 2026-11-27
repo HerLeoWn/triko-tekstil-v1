@@ -13,7 +13,7 @@ import { db, ilkKez } from './db.js';
 import { listele, geriYukle, islemOncesi, baslatOtomatikYedek } from './yedek.js';
 import { kimlik, yetkiKontrol, sifreHash } from './auth.js';
 import { olaylarRoute, degisiklikBildirimi } from './lib/sse.js';
-import { gorevBildirimi } from './lib/gorevBildirim.js';
+import { gorevBildirimi } from './lib/gorevBildirimi.js';
 import toastRouter from './routes/toast.js';
 
 import cuvallarRouter from './routes/cuvallar.js';
