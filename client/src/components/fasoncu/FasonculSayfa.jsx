@@ -5,7 +5,7 @@ import { ConfirmButton } from '../../Confirm.jsx';
 import { FasonHareketPaneli } from './FasonHareketleri.jsx';
 
 const DURAK_YAKIN_M = 150;
-const BOS_KALEM = { urunAd: '', urunKod: '', renk: '', cuval: '', toplamSeri: '' };
+const BOS_KALEM = { urunAd: '', urunKod: '', renk: '' };
 const bugunKey = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Istanbul' });
 const saatYazi = (iso) => new Date(iso).toLocaleString('tr-TR', {
   timeZone: 'Europe/Istanbul', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
@@ -30,7 +30,7 @@ function Rozet({ durum, harita }) {
 }
 
 const kalemYazi = (k) =>
-  `${k.urunAd}${k.urunKod ? ` (${k.urunKod})` : ''} · ${k.renk} · ${k.cuval} çuval${k.toplamSeri ? ` · ${k.toplamSeri} seri` : ''}`;
+  `${k.urunAd}${k.urunKod ? ` (${k.urunKod})` : ''} · ${k.renk}${k.cuval ? ` · ${k.cuval} çuval` : ''}${k.toplamSeri ? ` · ${k.toplamSeri} seri` : ''}`;
 
 // Konum yaklaşık 100 m hassasiyetle yuvarlanır, böylece her GPS güncellemesinde rota yeniden hesaplanmaz
 const yuvarla = (n) => (n == null ? null : Math.round(n * 1000) / 1000);
@@ -315,12 +315,8 @@ export function FasonculSayfa({ kullanici, onCikis }) {
                     onChange={(e) => kalemGuncelle(i, 'urunAd', e.target.value)} />
                   <input className="inp" placeholder="Ürün kodu (opsiyonel)" value={k.urunKod}
                     onChange={(e) => kalemGuncelle(i, 'urunKod', e.target.value)} />
-                  <input className="inp" placeholder="Renk" value={k.renk}
+                  <input className="inp sm:col-span-2" placeholder="Renk" value={k.renk}
                     onChange={(e) => kalemGuncelle(i, 'renk', e.target.value)} />
-                  <input className="inp" type="number" min="1" placeholder="Çuval sayısı" value={k.cuval}
-                    onChange={(e) => kalemGuncelle(i, 'cuval', e.target.value)} />
-                  <input className="inp sm:col-span-2" type="number" min="1" placeholder="Toplam seri (opsiyonel)"
-                    value={k.toplamSeri} onChange={(e) => kalemGuncelle(i, 'toplamSeri', e.target.value)} />
                 </div>
               </div>
             ))}

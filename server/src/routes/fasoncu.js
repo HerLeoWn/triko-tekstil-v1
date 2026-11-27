@@ -72,7 +72,7 @@ const depoKonumu = () => {
 };
 
 const kalemYazi = (k) =>
-  `${k.urunAd}${k.urunKod ? ` (${k.urunKod})` : ''} · ${k.renk} · ${k.cuval} çuval${k.toplam ? ` · ${k.toplam} seri` : ''}`;
+  `${k.urunAd}${k.urunKod ? ` (${k.urunKod})` : ''} · ${k.renk}${k.cuval ? ` · ${k.cuval} çuval` : ''}${k.toplam ? ` · ${k.toplam} seri` : ''}`;
 
 const bildirimEkle = (aliciId, metin, tur, refId) => {
   if (!aliciId) return;
@@ -96,14 +96,9 @@ function kalemleriDogrula(girdi) {
     const urunAd = String(k?.urunAd ?? '').trim();
     const urunKod = String(k?.urunKod ?? '').trim();
     const renk = String(k?.renk ?? '').trim();
-    const cuval = parseInt(k?.cuval, 10);
-    const topRaw = String(k?.toplamSeri ?? '').trim();
-    const toplam = topRaw === '' ? null : parseInt(topRaw, 10);
     if (!urunAd) throw new Error(`${no}. kalemde ürün modeli eksik.`);
     if (!renk) throw new Error(`${no}. kalemde renk eksik.`);
-    if (!(cuval > 0)) throw new Error(`${no}. kalemde çuval sayısı eksik.`);
-    if (toplam !== null && !(toplam > 0)) throw new Error(`${no}. kalemde toplam seri geçersiz.`);
-    return { urunAd, urunKod: urunKod || null, renk, cuval, toplam };
+    return { urunAd, urunKod: urunKod || null, renk, cuval: 0, toplam: null };
   });
 }
 

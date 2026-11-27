@@ -166,7 +166,7 @@ export function GelenMallarPaneli({ yonetici = false }) {
                       <li key={k.id}>
                         <span className="font-medium">{k.urunAd}</span>
                         {k.urunKod && <span className="text-muted"> ({k.urunKod})</span>}
-                        <span className="text-muted"> · {k.renk} · {k.cuval} çuval{k.toplamSeri ? ` · ${k.toplamSeri} seri` : ''}</span>
+                        <span className="text-muted"> · {k.renk}{k.cuval ? ` · ${k.cuval} çuval` : ''}{k.toplamSeri ? ` · ${k.toplamSeri} seri` : ''}</span>
                       </li>
                     ))}
                   </ul>
