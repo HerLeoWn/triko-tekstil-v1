@@ -127,7 +127,7 @@ for (const sql of [
   'ALTER TABLE hareketler ADD COLUMN kullanici TEXT',
   'ALTER TABLE cuvallar ADD COLUMN depo_id INTEGER DEFAULT 1',
   'ALTER TABLE giden ADD COLUMN depo_id INTEGER',
-    'ALTER TABLE users ADD COLUMN sifre_degistir INTEGER DEFAULT 0',
+  'ALTER TABLE users ADD COLUMN sifre_degistir INTEGER DEFAULT 0',
 ]) {
   try { raw.exec(sql); } catch {}
 }

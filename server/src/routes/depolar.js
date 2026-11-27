@@ -31,7 +31,7 @@ router.delete('/api/depolar/:id', wrap((req, res) => {
   if (db.prepare('SELECT COUNT(*) AS n FROM depolar').get().n <= 1) throw new Error('En az bir depo kalmalı.');
   const dolu = db.prepare('SELECT COUNT(*) AS n FROM cuvallar WHERE depo_id = ?').get(id).n;
   if (dolu) throw new Error('Bu depoda çuval var. Önce çuvalları başka depoya taşıyın.');
-    const bekleyenHareket = db.prepare("SELECT COUNT(*) AS n FROM fason_islem WHERE depo_id = ? AND durum = 'bekliyor'").get(id).n;
+  const bekleyenHareket = db.prepare("SELECT COUNT(*) AS n FROM fason_islem WHERE depo_id = ? AND durum = 'bekliyor'").get(id).n;
   if (bekleyenHareket) throw new Error('Bu depoda onay bekleyen fason hareketi var. Önce onu işleyin.');
   const ad = depoAd(id);
   db.prepare('DELETE FROM depolar WHERE id = ?').run(id);
