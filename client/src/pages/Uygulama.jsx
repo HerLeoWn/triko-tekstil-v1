@@ -10,6 +10,7 @@ import { useMesajlar } from '../hooks/useMesajlar.js';
 import { useGorevler } from '../hooks/useGorevler.js';
 import { get } from '../lib/istek.js';
 import { bildirimleriAc, pushDestekli } from '../lib/bildirim.js';
+import { useToastlar, ToastKapsul } from '../components/ui/Toast.jsx';
 import Baslik from '../components/layout/Baslik.jsx';
 import { SekmeMenu } from '../components/layout/SekmeMenu.jsx';
 import YanPanel from '../components/layout/YanPanel.jsx';
@@ -100,6 +101,7 @@ function YoneticiEkrani({ kullanici, onCikis }) {
   const [bildirimHata, setBildirimHata] = useState('');
 
   const bekleyenHareket = useBekleyenHareket();
+  const toast = useToastlar();
 
   // İzin daha önce verildiyse cihaz aboneliğini sessizce yeniler
   useEffect(() => {
@@ -261,6 +263,8 @@ function YoneticiEkrani({ kullanici, onCikis }) {
             onClose={() => setUrunDuz(null)}
           />
         )}
+
+        <ToastKapsul liste={toast.liste} kapat={toast.kapat} />
       </div>
     </YetkiContext.Provider>
   );

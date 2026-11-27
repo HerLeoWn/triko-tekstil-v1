@@ -13,6 +13,8 @@ import { db, ilkKez } from './db.js';
 import { listele, geriYukle, islemOncesi, baslatOtomatikYedek } from './yedek.js';
 import { kimlik, yetkiKontrol, sifreHash } from './auth.js';
 import { olaylarRoute, degisiklikBildirimi } from './lib/sse.js';
+import { gorevBildirimi } from './lib/gorevBildirim.js';
+import toastRouter from './routes/toast.js';
 
 import cuvallarRouter from './routes/cuvallar.js';
 import gidenRouter from './routes/giden.js';
@@ -34,7 +36,8 @@ app.use(express.json({ limit: '1mb' }));
 app.use(kimlik);            // oturumu çöz
 app.use(yetkiKontrol);      // rol kontrolü
 app.use(mesajlarRouter);    // mesajlar geri al (undo) kaydına girmez
-app.use(islemOncesi);       // veri değiştiren isteklerden önce anlık görüntü
+app.use(islemOncesi);
+app.use(gorevBildirimi);      // veri değiştiren isteklerden önce anlık görüntü
 
 // Canlı güncelleme
 app.get('/api/olaylar', olaylarRoute);
@@ -42,7 +45,7 @@ app.use(degisiklikBildirimi);
 
 // İş rotaları
 [
-    cuvallarRouter, gidenRouter, bitenRouter, stokRouter, depolarRouter, urunlerRouter, hareketlerRouter, yedekRouter, kullanicilarRouter, raporRouter, gorevlerRouter, sifreRouter, fasoncuRouter,bildirimRouter,
+    cuvallarRouter, gidenRouter, bitenRouter, stokRouter, depolarRouter, urunlerRouter, hareketlerRouter, yedekRouter, kullanicilarRouter, raporRouter, gorevlerRouter, sifreRouter, fasoncuRouter,bildirimRouter,toastRouter,
 ].forEach((r) => app.use(r));
 
 /* ---------- Acil durum şifre sıfırlama ---------- */
