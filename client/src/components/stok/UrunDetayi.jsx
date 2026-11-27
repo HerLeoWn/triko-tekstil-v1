@@ -27,7 +27,7 @@ export function UrunDetayi({ groups, depolar, onDeleteGroup }) {
                 const sw = swatch(r.renk);
                 return (
                   <div key={r.renk} className="rounded-xl p-3 shadow-soft transition hover:-translate-y-px"
-                    style={{ background: sw.bg, color: sw.fg }}>
+                    style={{ background: sw.grad, color: sw.fg }}>
                     <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[100px_1fr_190px] sm:gap-3">
                       <span className="text-[13px] font-semibold">{r.renk}</span>
                       <Bar tam={r.seri - r.eksik} eksik={r.eksik} max={rmax} delay={j * 90} />

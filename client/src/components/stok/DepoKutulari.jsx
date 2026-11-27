@@ -39,7 +39,7 @@ export function DepoKutulari({ depolar, groups }) {
                           const sw = swatch(r.renk);
                           return (
                             <span key={r.renk} className="rounded-full px-2.5 py-1 text-xs"
-                              style={{ background: sw.bg, color: sw.fg }}>
+                              style={{ background: sw.grad, color: sw.fg }}>
                               {r.renk} <b className="tabular-nums">{r.depoSeri[d.id]}</b>
                             </span>
                           );
