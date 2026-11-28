@@ -22,6 +22,24 @@ const grupYazi = (g) =>
 const toplamSeriHesapla = (g) =>
   (Number(g.cuval) || 0) * g.parcalar.reduce((s, p) => s + (Number(p.seri) || 0), 0);
 
+// İbre: kaynaktan hedefe giden yön. İç hareket düz çizgi, dış depo kesik çizgi ile gösterilir.
+export function Ibre({ kaynak, hedef, dis = false }) {
+  return (
+    <div className={`flex items-center gap-2 text-sm ${dis ? 'text-warn' : 'text-accent'}`}>
+      <span className="min-w-0 truncate rounded-lg bg-track px-2.5 py-1.5 font-medium text-ink">
+        {kaynak || '—'}
+      </span>
+      <div className="relative min-w-6 flex-1">
+        <div className={`border-t-2 border-current ${dis ? 'border-dashed' : ''}`} />
+        <span className="absolute -right-1 -top-2.5 text-xs">▶</span>
+      </div>
+      <span className={`min-w-0 truncate rounded-lg px-2.5 py-1.5 font-medium ${dis ? 'bg-warn-soft' : 'bg-accent-soft'}`}>
+        {hedef || '—'}{dis ? ' (dış)' : ''}
+      </span>
+    </div>
+  );
+}
+
 /* ---------- Fasoncu: depo hareketi bildirim formu ---------- */
 
 export function FasonHareketPaneli() {
@@ -29,6 +47,8 @@ export function FasonHareketPaneli() {
   const [depoId, setDepoId] = useState('');
   const [kodlar, setKodlar] = useState([]);
   const [tip, setTip] = useState('alim');
+  const [hedef, setHedef] = useState(''); // alımda: bir depo id'si, 'dis' ya da boş
+  const [hedefDis, setHedefDis] = useState('');
   const [not, setNot] = useState('');
   const [gruplar, setGruplar] = useState([bosGrup()]);
   const [islemler, setIslemler] = useState([]);
@@ -51,12 +71,15 @@ export function FasonHareketPaneli() {
   useEffect(() => {
     if (!depoId) return;
     setGruplar([bosGrup()]);
+    setHedef('');
     get(`/api/fasoncu/depo-stok?depoId=${depoId}`)
       .then((s) => setKodlar(s.kodlar))
       .catch((e) => setHata(e.message));
   }, [depoId]);
 
   const secilenKod = (kod) => kodlar.find((k) => k.kod === kod);
+  const depoAdi = (id) => depolar.find((d) => String(d.id) === String(id))?.ad ?? '';
+  const kaynakAdi = depoAdi(depoId);
 
   // Alımda yalnızca o depoda stoğu olan kodlar listelenir
   const kodSecenek = tip === 'alim' ? kodlar.filter((k) => k.renkler.length > 0) : kodlar;
@@ -79,6 +102,13 @@ export function FasonHareketPaneli() {
     grupGuncelle(i, { kod, cuvalIci: ci, parcalar: [{ renk: '', seri: ci }] });
   };
 
+  const tipDegistir = (yeni) => {
+    setTip(yeni);
+    setGruplar([bosGrup()]);
+    setHedef('');
+    setHedefDis('');
+  };
+
   const gonder = async () => {
     setHata('');
     setMesaj('');
@@ -86,11 +116,21 @@ export function FasonHareketPaneli() {
       setHata('Depo seçin.');
       return;
     }
+    if (tip === 'alim' && !hedef) {
+      setHata('Malın gideceği depoyu ya da dış depoyu seçin.');
+      return;
+    }
+    if (tip === 'alim' && hedef === 'dis' && !hedefDis.trim()) {
+      setHata('Dış depo adını yazın (ör. Marrakech).');
+      return;
+    }
     setGonderiyor(true);
     try {
       await post('/api/fasoncu/islemler', {
         tip,
         depoId: Number(depoId),
+        hedefDepoId: tip === 'alim' && hedef && hedef !== 'dis' ? Number(hedef) : null,
+        hedefDis: tip === 'alim' && hedef === 'dis' ? hedefDis.trim() : '',
         not,
         gruplar: gruplar.map((g) => ({
           kod: g.kod,
@@ -100,6 +140,8 @@ export function FasonHareketPaneli() {
       });
       setMesaj('Bildirim depo sorumlusuna gönderildi. Onaylanınca stok güncellenecek.');
       setGruplar([bosGrup()]);
+      setHedef('');
+      setHedefDis('');
       setNot('');
       yukleIslemler();
     } catch (e) {
@@ -119,6 +161,13 @@ export function FasonHareketPaneli() {
     }
   };
 
+  // Form üstündeki canlı ibre önizlemesi
+  const onizleme = tip === 'alim'
+    ? (hedef
+        ? <Ibre kaynak={kaynakAdi} hedef={hedef === 'dis' ? (hedefDis.trim() || 'Dış depo') : depoAdi(hedef)} dis={hedef === 'dis'} />
+        : null)
+    : <Ibre kaynak="Fason" hedef={kaynakAdi} />;
+
   return (
     <div className="space-y-6 p-4 sm:p-5">
       <div className="space-y-4">
@@ -129,7 +178,7 @@ export function FasonHareketPaneli() {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <label className="text-xs text-muted">Depo</label>
+            <label className="text-xs text-muted">{tip === 'alim' ? 'Kaynak depo (maldan aldığınız)' : 'Hedef depo (bıraktığınız)'}</label>
             <select className="inp w-full" value={depoId} onChange={(e) => setDepoId(e.target.value)}>
               {depolar.map((d) => (
                 <option key={d.id} value={d.id}>{d.ad}</option>
@@ -142,20 +191,44 @@ export function FasonHareketPaneli() {
               <button
                 type="button"
                 className={tip === 'alim' ? 'btn flex-1' : 'btn-ghost flex-1'}
-                onClick={() => { setTip('alim'); setGruplar([bosGrup()]); }}
+                onClick={() => tipDegistir('alim')}
               >
                 Depodan mal aldım
               </button>
               <button
                 type="button"
                 className={tip === 'teslim' ? 'btn flex-1' : 'btn-ghost flex-1'}
-                onClick={() => { setTip('teslim'); setGruplar([bosGrup()]); }}
+                onClick={() => tipDegistir('teslim')}
               >
                 Depoya mal bıraktım
               </button>
             </div>
           </div>
         </div>
+
+        {tip === 'alim' && (
+          <div className="space-y-2 rounded-xl border border-line p-3">
+            <label className="text-xs text-muted">Nereye gidecek?</label>
+            <select className="inp w-full" value={hedef} onChange={(e) => setHedef(e.target.value)}>
+              <option value="">Seçin</option>
+              {depolar.filter((d) => String(d.id) !== String(depoId)).map((d) => (
+                <option key={d.id} value={d.id}>{d.ad}</option>
+              ))}
+              <option value="dis">Dış depo (dışarı çıkış)</option>
+            </select>
+            {hedef === 'dis' && (
+              <input
+                className="inp w-full"
+                placeholder="Dış depo adı (ör. Marrakech)"
+                value={hedefDis}
+                onChange={(e) => setHedefDis(e.target.value)}
+                maxLength={60}
+              />
+            )}
+          </div>
+        )}
+
+        {onizleme && <div className="rounded-xl bg-bg p-3">{onizleme}</div>}
 
         {gruplar.map((g, i) => {
           const toplam = toplamSeriHesapla(g);
@@ -313,11 +386,12 @@ export function FasonHareketPaneli() {
         {islemler.map((h) => (
           <div key={h.id} className="space-y-2 rounded-xl border border-line p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-medium">{tipAd(h.tip)} · {h.depo}</span>
+              <span className="font-medium">{tipAd(h.tip)}</span>
               <span className={`rounded-full px-2 py-0.5 text-xs ${durumRenk[h.durum] ?? ''}`}>
                 {durumAd[h.durum] ?? h.durum}
               </span>
             </div>
+            <Ibre kaynak={h.kaynak} hedef={h.hedef} dis={h.hedefDis} />
             <p className="text-xs text-muted">{tarihYazi(h.tarih)}</p>
             <ul className="space-y-1 text-sm">
               {h.kalemler.map((g) => (
@@ -378,7 +452,7 @@ export function FasonHareketleriYonetici() {
       <div>
         <h3 className="font-semibold">Fason hareketleri</h3>
         <p className="text-xs text-muted">
-          Onaylayınca alım stoktan düşer, teslim stoğa eklenir. Liste 10 saniyede bir yenilenir.
+          Onaylayınca iç aktarımda mal kaynak depodan hedef depoya geçer, dış depoya gidenler sevk olarak kaydedilir. Liste 10 saniyede bir yenilenir.
         </p>
       </div>
 
@@ -389,12 +463,13 @@ export function FasonHareketleriYonetici() {
         <div key={h.id} className="space-y-2 rounded-xl border border-line p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-medium">
-              {tipAd(h.tip)} · {h.depo} · {h.fasoncuAd}
+              {tipAd(h.tip)} · {h.fasoncuAd}
             </span>
             <span className={`rounded-full px-2 py-0.5 text-xs ${durumRenk[h.durum] ?? ''}`}>
               {durumAd[h.durum] ?? h.durum}
             </span>
           </div>
+          <Ibre kaynak={h.kaynak} hedef={h.hedef} dis={h.hedefDis} />
           <p className="text-xs text-muted">{tarihYazi(h.tarih)}</p>
           <ul className="space-y-1 text-sm">
             {h.kalemler.map((g) => (

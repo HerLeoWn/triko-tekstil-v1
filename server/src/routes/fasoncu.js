@@ -80,6 +80,7 @@ const bildirimEkle = (aliciId, metin, tur, refId) => {
     .run(uid(), aliciId, metin, tur, refId ?? null, now());
   bildirimGonder([aliciId], { baslik: 'Triko', metin, url: '/' });
 };
+
 // Depo sorumlusunun mesaj kutusuna düşen bildirim
 const yoneticiyeMesaj = (icerik, gonderenAd) => {
   db.prepare(`INSERT INTO mesajlar (id, tur, gonderen_id, gonderen_ad, alici_id, alici_rol, ref_gun, icerik, tarih)
@@ -367,7 +368,7 @@ router.delete('/api/fasoncu/gelen-mallar/:id', wrap((req, res) => {
   res.json({ ok: true });
 }));
 
-/* ---------- Depo hareketleri: fasoncu tek depoda birden fazla çuval grubu bildirir, depo sorumlusu onaylar ---------- */
+/* ---------- Depo hareketleri: fasoncu çuval grupları bildirir, depo sorumlusu onaylar ---------- */
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS fason_islem (
@@ -397,6 +398,14 @@ db.exec(`
   );
 `);
 
+// Hedef kolonları: alımda malın gideceği yer (iç depo ya da dış depo adı). Eski tabloda yoksa eklenir.
+for (const sql of [
+  'ALTER TABLE fason_islem ADD COLUMN hedef_depo_id INTEGER',
+  'ALTER TABLE fason_islem ADD COLUMN hedef_dis TEXT',
+]) {
+  try { db.exec(sql); } catch { /* kolon zaten var */ }
+}
+
 const urunAdi = (kod) => db.prepare('SELECT ad FROM urunler WHERE kod = ? COLLATE NOCASE').get(kod)?.ad ?? '';
 
 // Bir işlemin çuval grupları. Her grupta çuval sayısı ve bir çuvalın içindeki renk-seri parçaları bulunur.
@@ -417,16 +426,26 @@ const gruplar = (islemId) =>
     };
   });
 
-const islemSatir = (h) => ({
-  id: h.id,
-  tip: h.tip,
-  durum: h.durum,
-  depo: depoAd(h.depo_id),
-  not: h.not_metni ?? '',
-  fasoncuAd: h.fasoncu_ad ?? '',
-  tarih: h.tarih,
-  kalemler: gruplar(h.id),
-});
+// İbre için: kaynak → hedef. Alımda kaynak depo, teslimde fason kaynak; teslimde hedef depo.
+const islemSatir = (h) => {
+  const alim = h.tip === 'alim';
+  const disHedef = alim && !h.hedef_depo_id;
+  return {
+    id: h.id,
+    tip: h.tip,
+    durum: h.durum,
+    depo: depoAd(h.depo_id),
+    kaynak: alim ? depoAd(h.depo_id) : 'Fason',
+    hedef: alim
+      ? (h.hedef_depo_id ? depoAd(h.hedef_depo_id) : (h.hedef_dis ?? ''))
+      : depoAd(h.depo_id),
+    hedefDis: disHedef && !!h.hedef_dis,
+    not: h.not_metni ?? '',
+    fasoncuAd: h.fasoncu_ad ?? '',
+    tarih: h.tarih,
+    kalemler: gruplar(h.id),
+  };
+};
 
 const islemBul = (id) => {
   const h = db.prepare('SELECT * FROM fason_islem WHERE id = ?').get(id);
@@ -520,7 +539,8 @@ router.get('/api/fasoncu/depo-stok', wrap((req, res) => {
   res.json({ kodlar });
 }));
 
-// Fasoncu: çuval gruplarıyla alım ya da teslim bildirir
+// Fasoncu: çuval gruplarıyla alım ya da teslim bildirir.
+// Alımda hedef zorunlu: ya başka bir iç depo (hedefDepoId) ya da dış depo adı (hedefDis).
 router.post('/api/fasoncu/islemler', wrap((req, res) => {
   const tip = req.body.tip === 'teslim' ? 'teslim' : req.body.tip === 'alim' ? 'alim' : null;
   if (!tip) throw new Error('Hareket tipi seçin: alım ya da teslim.');
@@ -528,7 +548,17 @@ router.post('/api/fasoncu/islemler', wrap((req, res) => {
   const not = String(req.body.not ?? '').trim().slice(0, 200);
   const grupListesi = grupDogrula(req.body.gruplar);
 
+  let hedefDepoId = null;
+  let hedefDis = null;
   if (tip === 'alim') {
+    if (req.body.hedefDepoId) {
+      hedefDepoId = depoGecerli(req.body.hedefDepoId);
+      if (Number(hedefDepoId) === Number(depoId)) throw new Error('Kaynak ve hedef depo aynı olamaz.');
+    } else {
+      hedefDis = String(req.body.hedefDis ?? '').trim().slice(0, 60);
+      if (!hedefDis) throw new Error('Malın gideceği depoyu ya da dış depo adını girin.');
+    }
+
     ihtiyacHesapla(grupListesi).forEach((k) => {
       const mevcut = stokSeriByRenk(k.kod, depoId)[k.renk.toLowerCase()] || 0;
       if (k.seri > mevcut) {
@@ -537,11 +567,12 @@ router.post('/api/fasoncu/islemler', wrap((req, res) => {
     });
   }
 
+  const hedefYazi = hedefDepoId ? depoAd(hedefDepoId) : `${hedefDis} (dış depo)`;
   const id = uid();
   db.transaction(() => {
-    db.prepare(`INSERT INTO fason_islem (id, tip, durum, fasoncu_id, fasoncu_ad, depo_id, not_metni, tarih)
-                VALUES (?,?,'bekliyor',?,?,?,?,?)`)
-      .run(id, tip, req.kullanici.id, req.kullanici.ad, depoId, not || null, now());
+    db.prepare(`INSERT INTO fason_islem (id, tip, durum, fasoncu_id, fasoncu_ad, depo_id, not_metni, tarih, hedef_depo_id, hedef_dis)
+                VALUES (?,?,'bekliyor',?,?,?,?,?,?,?)`)
+      .run(id, tip, req.kullanici.id, req.kullanici.ad, depoId, not || null, now(), hedefDepoId, hedefDis);
     const grupEkle = db.prepare('INSERT INTO fason_grup (id, islem_id, sira, kod, cuval) VALUES (?,?,?,?,?)');
     const parcaEkle = db.prepare('INSERT INTO fason_grup_parca (id, grup_id, sira, renk, seri) VALUES (?,?,?,?,?)');
     grupListesi.forEach((g, i) => {
@@ -551,7 +582,7 @@ router.post('/api/fasoncu/islemler', wrap((req, res) => {
     });
     yoneticiyeMesaj([
       tip === 'alim'
-        ? `${depoAd(depoId)} deposundan mal alındı (onay bekliyor)`
+        ? `${depoAd(depoId)} deposundan mal alındı → ${hedefYazi} (onay bekliyor)`
         : `${depoAd(depoId)} deposuna mal teslim edildi (onay bekliyor)`,
       `Bildiren: ${req.kullanici.ad}`,
       ...grupListesi.map((g) =>
@@ -589,8 +620,11 @@ router.get('/api/fason-islemler', wrap((req, res) => {
     .all().map(islemSatir));
 }));
 
-// Onay: alım renk bazında stoktan düşer, giden kaydı oluşur (tek fiş).
-// Teslim karma çuval olarak stoğa eklenir.
+// Onay:
+// - Alım: kaynak depodan renk bazında düşer.
+//   · Dış depo: giden (sevk) kaydı oluşur.
+//   · İç depo: giden kaydı oluşmaz (satış değil aktarım), çuval grupları hedef depoya eklenir.
+// - Teslim: çuval grupları hedef depoya (bu işlemin depo_id'si) karma çuval olarak eklenir.
 router.post('/api/fason-islemler/:id/onay', wrap((req, res) => {
   const h = islemBul(req.params.id);
   if (h.durum !== 'bekliyor') throw new Error('Bu hareket zaten işlendi.');
@@ -598,6 +632,7 @@ router.post('/api/fason-islemler/:id/onay', wrap((req, res) => {
   db.transaction(() => {
     const t = now();
     if (h.tip === 'alim') {
+      const dis = !h.hedef_depo_id;
       const ihtiyac = ihtiyacHesapla(grupListesi);
       ihtiyac.forEach((k) => {
         const mevcut = stokSeriByRenk(k.kod, h.depo_id)[k.renk.toLowerCase()] || 0;
@@ -609,9 +644,15 @@ router.post('/api/fason-islemler/:id/onay', wrap((req, res) => {
                                VALUES (?,?,?,?,?,?,?,1,?)`);
       ihtiyac.forEach((k) => {
         const sonuc = renktenDus(k.kod, k.renk, k.seri, h.depo_id);
-        ekle.run(uid(), k.kod, k.renk, sonuc.cuvalSayisi, k.seri, t, sonuc.cuvalIci ?? 0, h.depo_id);
-        logH('fason alım onaylandı', k.kod, k.renk, `${depoAd(h.depo_id)} · ${k.seri} seri · ${h.fasoncu_ad}`);
+        if (dis) {
+          ekle.run(uid(), k.kod, k.renk, sonuc.cuvalSayisi, k.seri, t, sonuc.cuvalIci ?? 0, h.depo_id);
+        }
+        logH(dis ? 'fason sevk onaylandı' : 'fason aktarım onaylandı', k.kod, k.renk,
+          `${depoAd(h.depo_id)} → ${dis ? `${h.hedef_dis} (dış)` : depoAd(h.hedef_depo_id)} · ${k.seri} seri · ${h.fasoncu_ad}`);
       });
+      if (!dis) {
+        grupListesi.forEach((g) => karmaCuvalEkle(g.kod, g.parcalar, g.cuval, h.hedef_depo_id));
+      }
     } else {
       grupListesi.forEach((g) => {
         karmaCuvalEkle(g.kod, g.parcalar, g.cuval, h.depo_id);
